@@ -1,23 +1,31 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
-    &lt;uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /&gt;
-    &lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE" /&gt;
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    &lt;application
+    <application
         android:label="Capri Mobile"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"&gt;
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
-        &lt;activity
+        <activity
             android:name=".MainActivity"
-            android:exported="true"&gt;
-            &lt;intent-filter&gt;
-                &lt;action android:name="android.intent.action.MAIN" /&gt;
-                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
-            &lt;/intent-filter&gt;
-        &lt;/activity&gt;
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
-        &lt;service
+        <service
             android:name=".FloatingCompanionService"
-            android:exported="false" /&gt;
-    &lt;/application&gt;
-&lt;/manifest&gt;
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started floating character companion" />
+
+        </service>
+    </application>
+</manifest>
