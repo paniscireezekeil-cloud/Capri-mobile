@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
@@ -19,6 +20,16 @@ class FloatingCompanionService : Service() {
 
     private lateinit var windowManager: WindowManager
     private var character: ImageView? = null
+
+    private val lines = listOf(
+        "Seriously? You summoned me again?",
+        "What's up?",
+        "Need something?",
+        "Don't just stare at me.",
+        "I'm right here, you know.",
+        "Bored already?",
+        "You called?"
+    )
 
     override fun onCreate() {
         super.onCreate()
@@ -35,14 +46,6 @@ class FloatingCompanionService : Service() {
             setImageResource(R.drawable.capri)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Capri floating companion"
-
-            setOnClickListener {
-                Toast.makeText(
-                    this@FloatingCompanionService,
-                    "Hey! I'm your companion.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
         }
 
         val params = WindowManager.LayoutParams(
@@ -56,6 +59,56 @@ class FloatingCompanionService : Service() {
             x = 80
             y = 250
         }
+
+        view.setOnTouchListener(object : android.view.View.OnTouchListener {
+            private var initialX = 0
+            private var initialY = 0
+            private var initialTouchX = 0f
+            private var initialTouchY = 0f
+            private var moved = false
+
+            override fun onTouch(v: android.view.View, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        moved = false
+                        return true
+                    }
+
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - initialTouchX).toInt()
+                        val dy = (event.rawY - initialTouchY).toInt()
+
+                        if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) {
+                            moved = true
+                        }
+
+                        if (moved) {
+                            params.x = initialX + dx
+                            params.y = initialY + dy
+                            windowManager.updateViewLayout(view, params)
+                        }
+                        return true
+                    }
+
+                    MotionEvent.ACTION_UP -> {
+                        if (!moved) {
+                            val line = lines.random()
+                            Toast.makeText(
+                                this@FloatingCompanionService,
+                                line,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
 
         character = view
         windowManager.addView(view, params)
