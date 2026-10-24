@@ -6,20 +6,19 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
-import android.widget.TextView
+import android.widget.ImageView
 import android.widget.Toast
 
 class FloatingCompanionService : Service() {
 
     private lateinit var windowManager: WindowManager
-    private var character: TextView? = null
+    private var character: ImageView? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -32,13 +31,11 @@ class FloatingCompanionService : Service() {
         startForeground(42, createNotification())
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        val view = TextView(this).apply {
-            text = "✦"
-            textSize = 42f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(85, 60, 130))
-            contentDescription = "Floating companion"
+        val view = ImageView(this).apply {
+            setImageResource(R.drawable.capri)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Capri floating companion"
+
             setOnClickListener {
                 Toast.makeText(
                     this@FloatingCompanionService,
