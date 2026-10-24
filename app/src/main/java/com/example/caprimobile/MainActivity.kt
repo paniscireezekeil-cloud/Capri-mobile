@@ -17,12 +17,18 @@ import android.widget.Toast
 import com.google.firebase.Firebase
 import com.google.firebase.ai.GenerativeBackend
 import com.google.firebase.ai.ai
-import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : Activity() {
 
-    private val executor = Executors.newSingleThreadExecutor()
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
     private val history = mutableListOf<Pair<String, String>>()
+
     private lateinit var chatLayout: LinearLayout
     private lateinit var input: EditText
     private lateinit var sendButton: Button
@@ -125,7 +131,6 @@ class MainActivity : Activity() {
 
         input = EditText(this).apply {
             hint = "Talk to Capri..."
-            setSingleLine(false)
             maxLines = 3
         }
 
@@ -155,10 +160,7 @@ class MainActivity : Activity() {
 
         setContentView(root)
 
-        addMessage(
-            "Capri",
-            "Hey! I'm here. What do you want to talk about?"
-        )
+        addMessage("Capri", "Hey! I'm here. What do you want to talk about?")
     }
 
     private fun sendMessage() {
@@ -167,15 +169,15 @@ class MainActivity : Activity() {
 
         input.text.clear()
         sendButton.isEnabled = false
-
         addMessage("You", message)
-        addMessage("Capri", "Thinking...")
+
+        val thinking = addMessage("Capri", "Thinking...")
 
         val prompt = buildString {
             append(
                 "You are Capri, a friendly, expressive AI companion. " +
-                "Speak naturally and warmly. Keep replies conversational. " +
-                "You are an AI, not a human.\n\n"
+                    "Speak naturally and warmly. Keep replies conversational. " +
+                    "You are an AI, not a human.\n\n"
             )
 
             history.forEach { (role, content) ->
@@ -185,68 +187,53 @@ class MainActivity : Activity() {
             append("User: $message\nCapri:")
         }
 
-        executor.execute {
+        scope.launch {
             try {
-                model.generateContent(prompt)
-                    .addOnSuccessListener { response ->
-                        runOnUiThread {
-                            removeLastMessage()
-
-                            val reply = response.text
-                                ?: "I couldn't think of a reply. Try again?"
-
-                            history.add("User" to message)
-                            history.add("Capri" to reply)
-
-                            addMessage("Capri", reply)
-                            sendButton.isEnabled = true
-                        }
-                    }
-                    .addOnFailureListener { error ->
-                        runOnUiThread {
-                            removeLastMessage()
-                            addMessage(
-                                "Capri",
-                                "I couldn't connect just now. Check your connection and Firebase setup."
-                            )
-                            Toast.makeText(
-                                this,
-                                error.message ?: "AI request failed",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            sendButton.isEnabled = true
-                        }
-                    }
-            } catch (error: Exception) {
-                runOnUiThread {
-                    removeLastMessage()
-                    addMessage(
-                        "Capri",
-                        "Something went wrong. Please try again."
-                    )
-                    sendButton.isEnabled = true
+                val response = withContext(Dispatchers.IO) {
+                    model.generateContent(prompt)
                 }
+
+                chatLayout.removeView(thinking)
+
+                val reply = response.text
+                    ?: "I couldn't think of a reply. Try again?"
+
+                history.add("User" to message)
+                history.add("Capri" to reply)
+                addMessage("Capri", reply)
+
+            } catch (error: Exception) {
+                chatLayout.removeView(thinking)
+
+                addMessage(
+                    "Capri",
+                    "I couldn't connect just now. Check your internet and Firebase setup."
+                )
+
+                Toast.makeText(
+                    this@MainActivity,
+                    error.message ?: "AI request failed",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                sendButton.isEnabled = true
             }
         }
     }
 
-    private fun addMessage(who: String, text: String) {
+    private fun addMessage(who: String, text: String): TextView {
         val view = TextView(this).apply {
             this.text = "$who: $text"
             textSize = 16f
             setPadding(8, 8, 8, 8)
         }
-        chatLayout.addView(view)
-    }
 
-    private fun removeLastMessage() {
-        if (chatLayout.childCount > 0) {
-            chatLayout.removeViewAt(chatLayout.childCount - 1)
-        }
+        chatLayout.addView(view)
+        return view
     }
 
     override fun onDestroy() {
-        executor.shutdown()
+        scope.cancel()
         super.onDestroy()
     }
 }
