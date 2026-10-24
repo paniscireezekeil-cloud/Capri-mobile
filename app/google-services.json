@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "439398662363",
+    "project_id": "capri-151c5",
+    "storage_bucket": "capri-151c5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:439398662363:android:c80a4b9dd26abd99d4ccfe",
+        "android_client_info": {
+          "package_name": "com.example.caprimobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQfayUq3Yyz8k6S8rjFhrmn6X86bun5Bc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
