@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 
 class MainActivity : Activity() {
 
@@ -29,25 +30,65 @@ class MainActivity : Activity() {
         }
 
         val description = TextView(this).apply {
-            text = "Your floating companion starts here."
+            text = "Your companion, always nearby."
             textSize = 16f
             gravity = Gravity.CENTER
         }
 
         val permissionButton = Button(this).apply {
-            text = "Allow floating overlay"
+            text = "1. Allow floating overlay"
             setOnClickListener {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
                 )
-                startActivity(intent)
+            }
+        }
+
+        val startButton = Button(this).apply {
+            text = "2. Summon companion"
+            setOnClickListener {
+                if (!Settings.canDrawOverlays(this@MainActivity)) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Allow floating overlay first.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    startService(
+                        Intent(
+                            this@MainActivity,
+                            FloatingCompanionService::class.java
+                        )
+                    )
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Companion summoned!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
+        val stopButton = Button(this).apply {
+            text = "3. Dismiss companion"
+            setOnClickListener {
+                stopService(
+                    Intent(
+                        this@MainActivity,
+                        FloatingCompanionService::class.java
+                    )
+                )
             }
         }
 
         layout.addView(title)
         layout.addView(description)
         layout.addView(permissionButton)
+        layout.addView(startButton)
+        layout.addView(stopButton)
 
         setContentView(layout)
     }
