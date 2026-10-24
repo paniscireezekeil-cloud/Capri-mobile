@@ -15,8 +15,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.google.firebase.Firebase
-import com.google.firebase.ai.GenerativeBackend
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,8 +30,8 @@ class MainActivity : Activity() {
     private val history = mutableListOf<Pair<String, String>>()
 
     private lateinit var chatLayout: LinearLayout
-    private lateinit var input: EditText
     private lateinit var sendButton: Button
+    private lateinit var input: EditText
 
     private val model by lazy {
         Firebase.ai(
@@ -136,7 +136,9 @@ class MainActivity : Activity() {
 
         sendButton = Button(this).apply {
             text = "Send"
-            setOnClickListener { sendMessage() }
+            setOnClickListener {
+                sendMessage()
+            }
         }
 
         root.addView(title)
@@ -160,7 +162,10 @@ class MainActivity : Activity() {
 
         setContentView(root)
 
-        addMessage("Capri", "Hey! I'm here. What do you want to talk about?")
+        addMessage(
+            "Capri",
+            "Hey! I'm here. What do you want to talk about?"
+        )
     }
 
     private fun sendMessage() {
@@ -200,6 +205,7 @@ class MainActivity : Activity() {
 
                 history.add("User" to message)
                 history.add("Capri" to reply)
+
                 addMessage("Capri", reply)
 
             } catch (error: Exception) {
@@ -221,7 +227,10 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun addMessage(who: String, text: String): TextView {
+    private fun addMessage(
+        who: String,
+        text: String
+    ): TextView {
         val view = TextView(this).apply {
             this.text = "$who: $text"
             textSize = 16f
