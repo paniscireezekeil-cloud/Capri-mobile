@@ -12,9 +12,11 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
+import kotlin.math.abs
 
 class FloatingCompanionService : Service() {
 
@@ -22,13 +24,18 @@ class FloatingCompanionService : Service() {
     private var character: ImageView? = null
 
     private val lines = listOf(
-        "Seriously? You summoned me again?",
-        "What's up?",
-        "Need something?",
-        "Don't just stare at me.",
-        "I'm right here, you know.",
-        "Bored already?",
-        "You called?"
+        "Took you long enough.",
+        "What are you looking at?",
+        "Don't get the wrong idea. I'm just here.",
+        "You need something, or are you just bored?",
+        "Hmph. Make it quick.",
+        "You've got a lot of free time, huh?",
+        "Well? I'm listening.",
+        "Don't expect me to entertain you all day.",
+        "You summoned me. Now what?",
+        "Try not to be a pain, alright?",
+        "Seriously? That's why you called me?",
+        "I'm not going anywhere. Relax."
     )
 
     override fun onCreate() {
@@ -48,9 +55,11 @@ class FloatingCompanionService : Service() {
             contentDescription = "Capri floating companion"
         }
 
+        val size = (220 * resources.displayMetrics.density).toInt()
+
         val params = WindowManager.LayoutParams(
-            120,
-            120,
+            size,
+            size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
@@ -60,14 +69,14 @@ class FloatingCompanionService : Service() {
             y = 250
         }
 
-        view.setOnTouchListener(object : android.view.View.OnTouchListener {
+        view.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
             private var moved = false
 
-            override fun onTouch(v: android.view.View, event: MotionEvent): Boolean {
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         initialX = params.x
@@ -82,7 +91,7 @@ class FloatingCompanionService : Service() {
                         val dx = (event.rawX - initialTouchX).toInt()
                         val dy = (event.rawY - initialTouchY).toInt()
 
-                        if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) {
+                        if (abs(dx) > 8 || abs(dy) > 8) {
                             moved = true
                         }
 
@@ -96,16 +105,16 @@ class FloatingCompanionService : Service() {
 
                     MotionEvent.ACTION_UP -> {
                         if (!moved) {
-                            val line = lines.random()
                             Toast.makeText(
                                 this@FloatingCompanionService,
-                                line,
+                                lines.random(),
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
                         return true
                     }
                 }
+
                 return false
             }
         })
@@ -123,6 +132,7 @@ class FloatingCompanionService : Service() {
                 "Capri Mobile",
                 NotificationManager.IMPORTANCE_LOW
             )
+
             getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
