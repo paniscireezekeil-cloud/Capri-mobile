@@ -1,0 +1,23 @@
+
+&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /&gt;
+    &lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE" /&gt;
+
+    &lt;application
+        android:label="Capri Mobile"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"&gt;
+
+        &lt;activity
+            android:name=".MainActivity"
+            android:exported="true"&gt;
+            &lt;intent-filter&gt;
+                &lt;action android:name="android.intent.action.MAIN" /&gt;
+                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
+            &lt;/intent-filter&gt;
+        &lt;/activity&gt;
+
+        &lt;service
+            android:name=".FloatingCompanionService"
+            android:exported="false" /&gt;
+    &lt;/application&gt;
+&lt;/manifest&gt;
