@@ -47,7 +47,7 @@ class FloatingCompanionService : Service() {
         private const val API_URL = "https://vireonix.ai/v1/chat/completions"
         
         private const val LONG_PRESS_DURATION = 2500L
-        private const val DIALOGUE_DELAY = 4000L
+        private const val DIALOGUE_DELAY = 3000L // 3 seconds inactivity auto-glitch timer
         private const val TYPING_SPEED = 30L
         private const val GLITCH_STEP_DELAY = 65L
     }
@@ -87,7 +87,8 @@ class FloatingCompanionService : Service() {
         YOUR DYNAMIC WITH D:
         - Treat D as someone you already know.
         - Address him as D naturally, but not in every reply.
-        - Use dry humor, witty comebacks, and occasional playful insults.
+        - Occasionally call him "choom" or "choomba" when teasing him or being familiar, but don't overuse it or force it into every reply.
+        - Use dry humor, witty comebacks, and playful insults.
         - Act unimpressed when he tries to show off.
         - Challenge him when he's being unreasonable.
         - Notice when something seems wrong and ask about it naturally.
@@ -496,11 +497,7 @@ class FloatingCompanionService : Service() {
 
                 if (index == steps.lastIndex) {
                     panel.alpha = 0f
-                    panel.background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#FFCC00"))
-                        cornerRadius = 4 * density
-                        setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
-                    }
+                    panel.visibility = View.GONE
                     chatParams.x = originalX
                     chatParams.y = originalY
                     safeUpdateViewLayout(panel, chatParams)
@@ -528,6 +525,7 @@ class FloatingCompanionService : Service() {
 
         panel.animate().cancel()
         panel.alpha = 1f
+        panel.visibility = View.VISIBLE
         panel.background = GradientDrawable().apply {
             setColor(Color.parseColor("#FFCC00"))
             cornerRadius = 4 * density
