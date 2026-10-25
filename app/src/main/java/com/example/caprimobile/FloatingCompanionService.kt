@@ -402,7 +402,7 @@ class FloatingCompanionService : Service() {
 
     private fun createChatWindow() {
         val density = resources.displayMetrics.density
-        val width = (260 * density).toInt()
+        val width = (220 * density).toInt()
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -435,7 +435,7 @@ class FloatingCompanionService : Service() {
         }
 
         val dialogue = TextView(this).apply {
-            text = ""
+            text = "Initializing..."
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
@@ -536,7 +536,7 @@ class FloatingCompanionService : Service() {
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
-        val panelW = panel.width.takeIf { it > 0 } ?: (260 * density).toInt()
+        val panelW = panel.width.takeIf { it > 0 } ?: (220 * density).toInt()
         val panelH = panel.height.takeIf { it > 0 } ?: (110 * density).toInt()
 
         val placeRight = centerX < screenW / 2
@@ -544,9 +544,9 @@ class FloatingCompanionService : Service() {
         val gap = (6 * density).toInt()
 
         chatParams.x = (if (placeRight) charParams.x + charW + gap else charParams.x - panelW - gap)
-            .coerceIn(0, (screenW - panelW).coerceAtLeast(0))
+            .coerceIn(0, (screenW - panelW - 20).coerceAtLeast(0))
         chatParams.y = (if (placeBelow) charParams.y + charH else charParams.y - panelH)
-            .coerceIn(0, (screenH - panelH).coerceAtLeast(0))
+            .coerceIn(0, (screenH - panelH - 20).coerceAtLeast(0))
 
         safeUpdateViewLayout(panel, chatParams)
     }
@@ -632,22 +632,19 @@ class FloatingCompanionService : Service() {
         }
 
         val targetText = botMsg ?: ""
-        dialogueView.text = ""
-        dialogueView.requestLayout()
+        // Set the text directly so WindowManager instantly measures and paints the box correctly
+        dialogueView.text = targetText
         repositionChat()
 
-        var index = 0
+        var charIndex = 0
         var mouthState = false
 
         val typingTask = object : Runnable {
             override fun run() {
                 if (generation != dialogueGeneration || dismissed) return
-                if (index < targetText.length) {
-                    val currentChar = targetText[index]
-                    dialogueView.append(currentChar.toString())
-                    dialogueView.invalidate()
-
-                    index++
+                if (charIndex < targetText.length) {
+                    val currentChar = targetText[charIndex]
+                    charIndex++
 
                     if (!currentChar.isWhitespace()) {
                         mouthState = !mouthState
