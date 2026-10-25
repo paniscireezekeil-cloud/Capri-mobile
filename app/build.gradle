@@ -14,7 +14,20 @@ android {
         minSdk 26
         targetSdk 28
         versionCode 1
-        versionName '0.1.0'
+        versionName '1.0'
+    }
+
+    buildTypes {
+        debug {
+            // Use Firebase App Check debug provider during development.
+        }
+
+        release {
+            // Do not ship the debug App Check provider in production.
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    'proguard-rules.pro'
+        }
     }
 
     compileOptions {
@@ -29,6 +42,9 @@ android {
 
 dependencies {
     implementation platform('com.google.firebase:firebase-bom:35.0.2')
+
     implementation 'com.google.firebase:firebase-ai'
     implementation 'com.google.firebase:firebase-appcheck-debug'
+
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
 }
