@@ -149,14 +149,12 @@ class MainActivity : Activity() {
                 history.add("assistant" to reply)
                 addMessage("Capri", reply)
             } catch (e: Exception) {
-                if (history.isNotEmpty() &&
-                    history.last().first == "user"
-                ) {
+                if (history.lastOrNull()?.first == "user") {
                     history.removeAt(history.lastIndex)
                 }
                 addMessage(
-                    "Error",
-                    e.message ?: "Connection failed. Try again."
+                    "AI connection error",
+                    e.message ?: "Couldn't reach the AI service."
                 )
             } finally {
                 send.isEnabled = true
@@ -167,19 +165,16 @@ class MainActivity : Activity() {
 
     private fun requestReply(): String {
         val connection = URL(
-            "https://api.llmfaucet.dev/v1/chat/completions"
+            "https://vireonix.ai/v1/chat/completions"
         ).openConnection() as HttpURLConnection
 
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 60000
+            connection.connectTimeout = 20000
+            connection.readTimeout = 90000
             connection.doOutput = true
             connection.setRequestProperty(
                 "Content-Type", "application/json"
-            )
-            connection.setRequestProperty(
-                "Authorization", "Bearer free"
             )
 
             val messages = JSONArray()
@@ -230,22 +225,22 @@ class MainActivity : Activity() {
                     json.optJSONObject("error")
                         ?.optString("message")
                         ?.takeIf { it.isNotBlank() }
-                        ?: "Server returned HTTP $status"
+                        ?: "AI server returned HTTP $status"
                 )
             }
 
             val choices = json.optJSONArray("choices")
-                ?: throw Exception("The server returned no AI response.")
+                ?: throw Exception("AI server returned no choices")
 
             if (choices.length() == 0) {
-                throw Exception("No answer received. Try again.")
+                throw Exception("AI returned an empty response")
             }
 
             return choices.getJSONObject(0)
                 .getJSONObject("message")
                 .optString("content")
                 .trim()
-                .ifEmpty { "I couldn't reply. Try again." }
+                .ifEmpty { "Try sending that again." }
 
         } finally {
             connection.disconnect()
