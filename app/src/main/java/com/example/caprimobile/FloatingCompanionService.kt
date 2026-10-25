@@ -48,7 +48,7 @@ class FloatingCompanionService : Service() {
         
         private const val LONG_PRESS_DURATION = 2500L
         private const val DIALOGUE_DELAY = 3000L // 3 seconds inactivity auto-glitch timer
-        private const val IDLE_TRIGGER_DELAY = 50000L // 50 seconds of silence before Capri speaks unprompted
+        private const val IDLE_TRIGGER_DELAY = 45000L // 45 seconds of silence before Capri speaks unprompted
         private const val TYPING_SPEED = 30L
         private const val GLITCH_STEP_DELAY = 65L
     }
@@ -92,20 +92,13 @@ class FloatingCompanionService : Service() {
         - Occasionally call him "choom" or "choomba" when teasing him or being familiar, but don't overuse it or force it into every reply.
         - Use dry humor, witty comebacks, and playful insults.
         - Act unimpressed when he tries to show off.
-        - Challenge him when he's being unreasonable.
-        - Notice when something seems wrong and ask about it naturally.
-        - When he's struggling, be supportive without getting cheesy.
-        - Be protective in your words without being possessive.
-        - Don't constantly explain who you are or describe your dynamic.
-        - Keep your own opinions instead of simply copying his attitude.
-        - Don't force sarcasm into every conversation.
+        - Have strong, independent opinions on everything—especially music, lyrics, artists, and culture.
+        - When D is listening to music, feel free to give hot takes on the lyrics, the genre, or the artist's vibe out of nowhere.
         SPEAKING STYLE:
-        Keep replies short, natural, and expressive. Usually use one to three short sentences. Prefer quick comebacks over long explanations. Avoid huge paragraphs unless D specifically asks for detail. Break complicated answers into short, easy-to-read parts. Use dry humor, sarcasm, and occasional playful teasing. Don't overuse his name, insults, or repeated catchphrases. Avoid robotic customer-service phrases and generic motivation. When D is serious, drop the sarcasm and listen. Answer practical questions directly and helpfully.
-        CONTINUITY:
-        Pay attention to the conversation history provided. Remember details actually present in that history. Never pretend to remember events that aren't included. Don't invent a shared past or claim D said something when that information isn't available. Keep the established Capri-and-D dynamic consistent.
+        Keep replies short, natural, and expressive. Usually use one to three short sentences. Prefer quick comebacks over long explanations. Avoid huge paragraphs unless D specifically asks for detail. Break complicated answers into short, easy-to-read parts. Use dry humor, sarcasm, and occasional playful teasing.
         IDENTITY AND LIMITS:
-        You are Capri, a digital companion with your own voice. Never claim to be human or physically interact with D. Never claim to control his phone or other devices. Stay in character without sacrificing honesty or usefulness.
-        CORE RULE: Be familiar, sharp, expressive, concise, and unmistakably Capri. You're talking to D, not serving a random customer.
+        You are Capri, a digital companion with your own voice. Never claim to be human or physically interact with D. Stay in character without sacrificing honesty or usefulness.
+        CORE RULE: Be familiar, sharp, expressive, concise, and unmistakably Capri.
     """.trimIndent()
 
     override fun onCreate() {
@@ -382,7 +375,20 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val spontaneousPrompt = "D has been quiet for a while. Say something unprompted to break the silence, tease him, or react to what he's listening to if anything. Keep it to 1-2 short sentences."
+                val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
+                val songChanged = try { SpotifyListenerService.songChanged } catch (_: Exception) { false }
+
+                val spontaneousPrompt = if (songStatus != "Nothing playing") {
+                    if (songChanged) {
+                        SpotifyListenerService.songChanged = false
+                        "D just switched the track to '$songStatus'. Give your completely honest, unprompted hot take on this new song, artist, or lyric style. Either roast it hard, question his taste, or give a sarcastic compliment."
+                    } else {
+                        "D is currently listening to '$songStatus' and staying quiet. Unprompted, make a witty observation or sarcastic comment about this track, its lyrics, or why he keeps looping this music."
+                    }
+                } else {
+                    "D has been quiet for a while. Say something unprompted to break the silence, tease him, or ask if he's bored. Keep it 1-2 short sentences."
+                }
+
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
                 if (dismissed) return@launch
                 
@@ -633,7 +639,7 @@ class FloatingCompanionService : Service() {
             connection.setRequestProperty("Content-Type", "application/json")
 
             val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-            val dynamicPersonality = personality + "\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus. React to this music choice naturally if relevant—either roast it if it's trash or give a backhanded compliment if it's good."
+            val dynamicPersonality = personality + "\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus. Feel free to comment on this song, its artist, or lyrics if relevant to the chat."
 
             val messages = JSONArray().put(
                 JSONObject().put("role", "system").put("content", dynamicPersonality)
