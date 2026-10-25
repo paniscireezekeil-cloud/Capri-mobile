@@ -75,7 +75,6 @@ class FloatingCompanionService : Service() {
     private var fadeRunnable: Runnable? = null
     private var typingRunnable: Runnable? = null
     private var longPressRunnable: Runnable? = null
-    private var mouthSyncRunnable: Runnable? = null
     private var idleRunnable: Runnable? = null
 
     private var glitchRunId = 0
@@ -216,9 +215,10 @@ class FloatingCompanionService : Service() {
         val height = (110 * density).toInt() // Sideways landscape height
 
         val container = FrameLayout(this).apply {
+            // Tactical Yellow Tech Border matching the reference screenshot
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#110A1F"))
-                setStroke((2 * density).toInt(), Color.parseColor("#00FFFF"))
+                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00")) // Yellow border
                 cornerRadius = 4f * density
             }
         }
@@ -236,7 +236,7 @@ class FloatingCompanionService : Service() {
         val tag = TextView(this).apply {
             text = "CAPRI // DORMANT"
             textSize = 9f
-            setTextColor(Color.parseColor("#00FFCC"))
+            setTextColor(Color.parseColor("#FFCC00")) // Yellow status text
             setBackgroundColor(Color.parseColor("#0A0E17"))
             setPadding((4 * density).toInt(), (2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt())
             layoutParams = FrameLayout.LayoutParams(
@@ -334,10 +334,11 @@ class FloatingCompanionService : Service() {
                 (10 * density).toInt(),
                 (8 * density).toInt()
             )
+            // Tactical Yellow Tech Border for the chat window matching the screenshot
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#CC0D111A"))
+                setColor(Color.parseColor("#E60D111A")) // Dark immersive terminal background
                 cornerRadius = 4 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#00FFFF"))
+                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00")) // Sharp yellow border
             }
             elevation = 4f * density
         }
@@ -345,7 +346,7 @@ class FloatingCompanionService : Service() {
         val userQuery = TextView(this).apply {
             text = ""
             textSize = 10f
-            setTextColor(Color.parseColor("#88AACC"))
+            setTextColor(Color.parseColor("#AA8844")) // Muted gold for user prompt
             setPadding(2, 0, 2, 2)
         }
 
@@ -353,7 +354,7 @@ class FloatingCompanionService : Service() {
             text = ""
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#00FFCC"))
+            setTextColor(Color.parseColor("#FFCC00")) // Crisp yellow text matching the border style
             setPadding(2, 2, 2, 6)
             setOnClickListener { openKeyboard() }
         }
@@ -388,7 +389,7 @@ class FloatingCompanionService : Service() {
             textSize = 11f
             letterSpacing = 0.12f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#00FFFF"))
+            setTextColor(Color.parseColor("#FFCC00")) // Yellow SEND button
             setPadding(4, 2, 2, 2)
             setOnClickListener { submitMessage() }
         }
@@ -499,8 +500,6 @@ class FloatingCompanionService : Service() {
     }
 
     private fun stopMouthAnimation() {
-        mouthSyncRunnable?.let { handler.removeCallbacks(it) }
-        mouthSyncRunnable = null
         setMouthOpen(false)
     }
 
@@ -545,7 +544,6 @@ class FloatingCompanionService : Service() {
                     dialogueView.append(currentChar.toString())
                     index++
 
-                    // Lip-sync logic: Open mouth on non-space characters/syllables, snap closed on spaces or toggle rhythmically
                     if (!currentChar.isWhitespace()) {
                         mouthState = !mouthState
                         setMouthOpen(mouthState)
@@ -558,7 +556,6 @@ class FloatingCompanionService : Service() {
                     handler.postDelayed(this, TYPING_SPEED)
                 } else {
                     typingRunnable = null
-                    // Stop mouth movement as soon as typing completes
                     setMouthOpen(false)
 
                     val timer = Runnable {
@@ -583,10 +580,10 @@ class FloatingCompanionService : Service() {
         val density = resources.displayMetrics.density
 
         val glitchColors = listOf(
-            Color.rgb(0, 220, 255),
-            Color.rgb(0, 255, 110),
-            Color.rgb(190, 40, 255),
-            Color.rgb(255, 220, 40)
+            Color.rgb(255, 204, 0),
+            Color.rgb(255, 140, 0),
+            Color.rgb(255, 60, 60),
+            Color.rgb(255, 220, 100)
         )
 
         val steps = listOf(
@@ -650,9 +647,9 @@ class FloatingCompanionService : Service() {
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
         panel.background = GradientDrawable().apply {
-            setColor(Color.parseColor("#CC0D111A"))
+            setColor(Color.parseColor("#E60D111A"))
             cornerRadius = 4 * density
-            setStroke((1 * density).toInt(), Color.parseColor("#00FFFF"))
+            setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
         }
 
         chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
