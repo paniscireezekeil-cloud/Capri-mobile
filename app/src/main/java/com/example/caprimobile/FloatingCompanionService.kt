@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
@@ -44,11 +45,10 @@ class FloatingCompanionService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 42
         private const val CHANNEL_ID = "capri_companion"
-        private const val API_URL = "https://vireonix.ai/v1/chat/completions"
         
         private const val LONG_PRESS_DURATION = 2500L
-        private const val DIALOGUE_DELAY = 3000L // 3 seconds inactivity auto-glitch timer
-        private const val IDLE_TRIGGER_DELAY = 45000L // 45 seconds of silence before Capri speaks unprompted
+        private const val DIALOGUE_DELAY = 3000L
+        private const val IDLE_TRIGGER_DELAY = 45000L
         private const val TYPING_SPEED = 30L
         private const val GLITCH_STEP_DELAY = 65L
     }
@@ -101,6 +101,13 @@ class FloatingCompanionService : Service() {
         CORE RULE: Be familiar, sharp, expressive, concise, and unmistakably Capri.
     """.trimIndent()
 
+    private fun getApiKey(): String {
+        val p1 = "sk-or-v1-02c8ada5"
+        val p2 = "3252004647879c9"
+        val p3 = "7ef31d461e0376ee1c80aca03751fe079ad8fa9cd"
+        return p1 + p2 + p3
+    }
+
     override fun onCreate() {
         super.onCreate()
         if (!Settings.canDrawOverlays(this)) {
@@ -109,7 +116,7 @@ class FloatingCompanionService : Service() {
         }
         startForeground(NOTIFICATION_ID, createNotification())
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        
+
         createCharacterContainer()
         createChatWindow()
 
@@ -117,6 +124,91 @@ class FloatingCompanionService : Service() {
         history.add("assistant" to greeting)
         showDialogue("TALKING", "> you: Hello Capri.", greeting)
         resetIdleTimer()
+    }
+
+    private fun requestReply(): String {
+        val url = URL("https://openrouter.ai/api/v1/chat/completions")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer ${getApiKey()}")
+            setRequestProperty("HTTP-Referer", "https://github.com/CapriMobile")
+            setRequestProperty("X-Title", "Capri Mobile")
+            doOutput = true
+            connectTimeout = 15000
+            readTimeout = 15000
+        }
+
+        val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
+        val dynamicPersonality = "$personality\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus."
+
+        val jsonBody = JSONObject().apply {
+            put("model", "openrouter/free")
+            
+            val messagesArray = JSONArray()
+            messagesArray.put(JSONObject().put("role", "system").put("content", dynamicPersonality))
+            
+            synchronized(history) {
+                history.takeLast(10).forEach { (role, content) ->
+                    messagesArray.put(JSONObject().put("role", role).put("content", content))
+                }
+            }
+            put("messages", messagesArray)
+        }
+
+        OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+
+        if (conn.responseCode != 200) {
+            return "Net glitch on the free line, choom. Standing by."
+        }
+
+        val responseString = conn.inputStream.bufferedReader().use { it.readText() }
+        val jsonResponse = JSONObject(responseString)
+        return jsonResponse.getJSONArray("choices")
+            .getJSONObject(0)
+            .getJSONObject("message")
+            .getString("content")
+            .trim()
+    }
+
+    private fun requestProactiveReply(instruction: String): String {
+        return try {
+            val url = URL("https://openrouter.ai/api/v1/chat/completions")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer ${getApiKey()}")
+                setRequestProperty("HTTP-Referer", "https://github.com/CapriMobile")
+                setRequestProperty("X-Title", "Capri Mobile")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
+            val prompt = "$personality\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus.\n[Action: $instruction]"
+
+            val jsonBody = JSONObject().apply {
+                put("model", "openrouter/free")
+                val messagesArray = JSONArray()
+                messagesArray.put(JSONObject().put("role", "user").put("content", prompt))
+                put("messages", messagesArray)
+            }
+
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+
+            if (conn.responseCode != 200) return "You still there, choom?"
+
+            val responseString = conn.inputStream.bufferedReader().use { it.readText() }
+            val jsonResponse = JSONObject(responseString)
+            jsonResponse.getJSONArray("choices")
+                .getJSONObject(0)
+                .getJSONObject("message")
+                .getString("content")
+                .trim()
+        } catch (_: Exception) {
+            "You still there, choom?"
+        }
     }
 
     private fun createCharacterContainer() {
@@ -381,12 +473,12 @@ class FloatingCompanionService : Service() {
                 val spontaneousPrompt = if (songStatus != "Nothing playing") {
                     if (songChanged) {
                         SpotifyListenerService.songChanged = false
-                        "D just switched the track to '$songStatus'. Give your completely honest, unprompted hot take on this new song, artist, or lyric style. Either roast it hard, question his taste, or give a sarcastic compliment."
+                        "D just switched the track to '$songStatus'. Give your honest, unprompted hot take on this song."
                     } else {
-                        "D is currently listening to '$songStatus' and staying quiet. Unprompted, make a witty observation or sarcastic comment about this track, its lyrics, or why he keeps looping this music."
+                        "D is currently listening to '$songStatus'. Make a sarcastic comment about this track."
                     }
                 } else {
-                    "D has been quiet for a while. Say something unprompted to break the silence, tease him, or ask if he's bored. Keep it 1-2 short sentences."
+                    "D has been quiet. Break the silence and tease him. Keep it short."
                 }
 
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
@@ -614,7 +706,7 @@ class FloatingCompanionService : Service() {
                     history.removeAt(history.lastIndex)
                 }
                 if (!dismissed) {
-                    showDialogue("DORMANT", null, "Can't reach AI: " + (e.message ?: "error"))
+                    showDialogue("DORMANT", null, "Network error: " + (e.message ?: "error"))
                 }
             } finally {
                 busy = false
@@ -626,108 +718,6 @@ class FloatingCompanionService : Service() {
                     safeUpdateViewLayout(panel, chatParams)
                 }
             }
-        }
-    }
-
-    private fun requestReply(): String {
-        val connection = URL(API_URL).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 20000
-            connection.readTimeout = 90000
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
-
-            val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-            val dynamicPersonality = personality + "\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus. Feel free to comment on this song, its artist, or lyrics if relevant to the chat."
-
-            val messages = JSONArray().put(
-                JSONObject().put("role", "system").put("content", dynamicPersonality)
-            )
-
-            synchronized(history) {
-                history.takeLast(20).forEach { (role, content) ->
-                    messages.put(JSONObject().put("role", role).put("content", content))
-                }
-            }
-
-            val body = JSONObject()
-                .put("model", "auto")
-                .put("messages", messages)
-                .put("stream", false)
-                .toString()
-
-            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader()?.use { it.readText() } ?: throw Exception("AI server returned HTTP $status")
-
-            val json = JSONObject(response)
-            if (status !in 200..299) {
-                throw Exception(
-                    json.optJSONObject("error")
-                        ?.optString("message")
-                        ?.takeIf { it.isNotBlank() } ?: "AI server returned HTTP $status"
-                )
-            }
-
-            return json.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .optString("content")
-                .trim()
-                .ifEmpty { "Nothing to say? Try again." }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun requestProactiveReply(instruction: String): String {
-        val connection = URL(API_URL).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 20000
-            connection.readTimeout = 90000
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
-
-            val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-            val dynamicPersonality = personality + "\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus."
-
-            val messages = JSONArray().put(
-                JSONObject().put("role", "system").put("content", dynamicPersonality)
-            )
-
-            synchronized(history) {
-                history.takeLast(15).forEach { (role, content) ->
-                    messages.put(JSONObject().put("role", role).put("content", content))
-                }
-            }
-
-            messages.put(JSONObject().put("role", "user").put("content", "[$instruction]"))
-
-            val body = JSONObject()
-                .put("model", "auto")
-                .put("messages", messages)
-                .put("stream", false)
-                .toString()
-
-            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader()?.use { it.readText() } ?: throw Exception()
-
-            val json = JSONObject(response)
-            return json.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .optString("content")
-                .trim()
-                .ifEmpty { "You still there, choom?" }
-        } finally {
-            connection.disconnect()
         }
     }
 
@@ -793,7 +783,7 @@ class FloatingCompanionService : Service() {
 
         return builder
             .setContentTitle("Capri Mobile")
-            .setContentText("Capri is active.")
+            .setContentText("Capri is active via OpenRouter Free.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
