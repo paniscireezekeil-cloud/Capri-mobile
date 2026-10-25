@@ -402,7 +402,7 @@ class FloatingCompanionService : Service() {
 
     private fun createChatWindow() {
         val density = resources.displayMetrics.density
-        val width = (230 * density).toInt()
+        val width = (250 * density).toInt()
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -420,11 +420,19 @@ class FloatingCompanionService : Service() {
             elevation = 4f * density
         }
 
+        // Explicit layout parameters ensuring proper width/height wrapping for text views
+        val textParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            bottomMargin = (4 * density).toInt()
+        }
+
         val userQuery = TextView(this).apply {
             text = ""
             textSize = 10f
             setTextColor(Color.parseColor("#AA8844"))
-            setPadding(2, 0, 2, 2)
+            layoutParams = textParams
         }
 
         val dialogue = TextView(this).apply {
@@ -432,10 +440,9 @@ class FloatingCompanionService : Service() {
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
-            setPadding(2, 2, 2, 6)
+            layoutParams = textParams
         }
 
-        // Visible text input so you can actually see what you are typing!
         val input = EditText(this).apply {
             hint = "Type to Capri..."
             setHintTextColor(Color.parseColor("#666666"))
@@ -529,7 +536,7 @@ class FloatingCompanionService : Service() {
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
-        val panelW = panel.width.takeIf { it > 0 } ?: (230 * density).toInt()
+        val panelW = panel.width.takeIf { it > 0 } ?: (250 * density).toInt()
         val panelH = panel.height.takeIf { it > 0 } ?: (110 * density).toInt()
 
         val placeRight = centerX < screenW / 2
