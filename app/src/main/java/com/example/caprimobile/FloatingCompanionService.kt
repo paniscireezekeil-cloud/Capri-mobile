@@ -213,8 +213,8 @@ class FloatingCompanionService : Service() {
 
     private fun createCharacterContainer() {
         val density = resources.displayMetrics.density
-        val width = (110 * density).toInt()
-        val height = (160 * density).toInt()
+        val width = (160 * density).toInt()  // Sideways landscape width
+        val height = (110 * density).toInt() // Sideways landscape height
 
         val container = FrameLayout(this).apply {
             background = GradientDrawable().apply {
@@ -430,8 +430,8 @@ class FloatingCompanionService : Service() {
         val screenH = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
 
-        val charW = (110 * density).toInt()
-        val charH = (160 * density).toInt()
+        val charW = (160 * density).toInt()
+        val charH = (110 * density).toInt()
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
