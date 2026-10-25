@@ -65,7 +65,7 @@ class FloatingCompanionService : Service() {
     private var chatWindow: LinearLayout? = null
     private var userQueryText: TextView? = null
     private var dialogueBubble: TextView? = null
-    private var hiddenInput: EditText? = null
+    private var chatInput: EditText? = null
 
     private lateinit var charParams: WindowManager.LayoutParams
     private lateinit var chatParams: WindowManager.LayoutParams
@@ -216,12 +216,11 @@ class FloatingCompanionService : Service() {
 
     private fun createCharacterContainer() {
         val density = resources.displayMetrics.density
-        val width = (160 * density).toInt()  // Sideways landscape width
-        val height = (110 * density).toInt() // Sideways landscape height
+        val width = (160 * density).toInt()
+        val height = (110 * density).toInt()
 
         val container = FrameLayout(this).apply {
             background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
-            // Add a slight padding so the image doesn't cover up the yellow border strokes
             setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
         }
 
@@ -434,24 +433,30 @@ class FloatingCompanionService : Service() {
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
             setPadding(2, 2, 2, 6)
-            setOnClickListener { openKeyboard() }
         }
 
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
+        // Visible text input so you can actually see what you are typing!
         val input = EditText(this).apply {
-            alpha = 0f
-            setTextColor(Color.TRANSPARENT)
-            setHintTextColor(Color.TRANSPARENT)
-            textSize = 1f
+            hint = "Type to Capri..."
+            setHintTextColor(Color.parseColor("#666666"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            textSize = 12f
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEND
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            background = null
-            layoutParams = LinearLayout.LayoutParams(1, 1)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1A1F29"))
+                setStroke(1, Color.parseColor("#444444"))
+                cornerRadius = 3 * density
+            }
+            setPadding((6 * density).toInt(), (4 * density).toInt(), (6 * density).toInt(), (4 * density).toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                marginEnd = (6 * density).toInt()
+            }
             setOnEditorActionListener { _, action, _ ->
                 if (action == EditorInfo.IME_ACTION_SEND) {
                     submitMessage()
@@ -468,8 +473,19 @@ class FloatingCompanionService : Service() {
             letterSpacing = 0.12f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
-            setPadding(4, 2, 2, 2)
+            setPadding(4, 4, 4, 4)
             setOnClickListener { submitMessage() }
+        }
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (4 * density).toInt()
+            }
         }
 
         row.addView(input)
@@ -493,7 +509,7 @@ class FloatingCompanionService : Service() {
 
         userQueryText = userQuery
         dialogueBubble = dialogue
-        hiddenInput = input
+        chatInput = input
         chatWindow = panel
 
         wm.addView(panel, chatParams)
@@ -514,7 +530,7 @@ class FloatingCompanionService : Service() {
         val centerY = charParams.y + charH / 2
 
         val panelW = panel.width.takeIf { it > 0 } ?: (230 * density).toInt()
-        val panelH = panel.height.takeIf { it > 0 } ?: (90 * density).toInt()
+        val panelH = panel.height.takeIf { it > 0 } ?: (110 * density).toInt()
 
         val placeRight = centerX < screenW / 2
         val placeBelow = centerY < screenH / 2
@@ -706,7 +722,7 @@ class FloatingCompanionService : Service() {
     }
 
     private fun openKeyboard() {
-        val input = hiddenInput ?: return
+        val input = chatInput ?: return
         val panel = chatWindow ?: return
         if (dismissed || busy) return
 
@@ -743,7 +759,7 @@ class FloatingCompanionService : Service() {
     }
 
     private fun submitMessage() {
-        val input = hiddenInput ?: return
+        val input = chatInput ?: return
         val message = input.text.toString().trim()
         if (message.isEmpty() || busy || dismissed) return
 
@@ -809,7 +825,7 @@ class FloatingCompanionService : Service() {
         statusTag = null
         dialogueBubble = null
         userQueryText = null
-        hiddenInput = null
+        chatInput = null
         chatWindow = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -868,7 +884,7 @@ class FloatingCompanionService : Service() {
         statusTag = null
         dialogueBubble = null
         userQueryText = null
-        hiddenInput = null
+        chatInput = null
         chatWindow = null
 
         super.onDestroy()
