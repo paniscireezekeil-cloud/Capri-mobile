@@ -8,54 +8,41 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 
 class MainActivity : Activity() {
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private val history = mutableListOf<Pair<String, String>>()
-    private lateinit var chatLayout: LinearLayout
-    private lateinit var sendButton: Button
+    private lateinit var chat: LinearLayout
     private lateinit var input: EditText
-
-    private val apiKey = "PASTE_YOUR_API_KEY_HERE"
-    private val modelName = "gemini-2.5-flash"
+    private lateinit var send: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 16)
+            setPadding(20, 16, 20, 12)
         }
 
         root.addView(TextView(this).apply {
-            text = "Capri Mobile"
-            textSize = 26f
+            text = "Capri"
+            textSize = 30f
             gravity = Gravity.CENTER
         })
 
         root.addView(TextView(this).apply {
             text = "Your companion, always nearby."
-            textSize = 15f
             gravity = Gravity.CENTER
         })
 
         root.addView(Button(this).apply {
-            text = "1. Allow floating overlay"
+            text = "Allow floating overlay"
             setOnClickListener {
                 startActivity(
                     Intent(
@@ -67,32 +54,27 @@ class MainActivity : Activity() {
         })
 
         root.addView(Button(this).apply {
-            text = "2. Summon companion"
+            text = "Summon Capri"
             setOnClickListener {
-                if (!Settings.canDrawOverlays(this@MainActivity)) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Allow floating overlay first.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
+                if (Settings.canDrawOverlays(this@MainActivity)) {
                     startService(
                         Intent(
                             this@MainActivity,
                             FloatingCompanionService::class.java
                         )
                     )
+                } else {
                     Toast.makeText(
                         this@MainActivity,
-                        "Companion summoned!",
-                        Toast.LENGTH_SHORT
+                        "Allow the overlay first.",
+                        Toast.LENGTH_LONG
                     ).show()
                 }
             }
         })
 
         root.addView(Button(this).apply {
-            text = "3. Dismiss companion"
+            text = "Dismiss Capri"
             setOnClickListener {
                 stopService(
                     Intent(
@@ -109,14 +91,14 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 8)
         })
 
-        chatLayout = LinearLayout(this).apply {
+        chat = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(8, 8, 8, 8)
+            setPadding(6, 6, 6, 6)
         }
 
         val scroll = ScrollView(this)
         scroll.addView(
-            chatLayout,
+            chat,
             ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -128,7 +110,7 @@ class MainActivity : Activity() {
             maxLines = 3
         }
 
-        sendButton = Button(this).apply {
+        send = Button(this).apply {
             text = "Send"
             setOnClickListener { sendMessage() }
         }
@@ -142,7 +124,7 @@ class MainActivity : Activity() {
             )
         )
         root.addView(input)
-        root.addView(sendButton)
+        root.addView(send)
 
         setContentView(root)
         addMessage("Capri", "Hey! I'm here. What do you want to talk about?")
@@ -150,81 +132,76 @@ class MainActivity : Activity() {
 
     private fun sendMessage() {
         val message = input.text.toString().trim()
-        if (message.isEmpty()) return
-
-        if (apiKey == "PASTE_YOUR_API_KEY_HERE") {
-            addMessage("System", "Add your Gemini API key in MainActivity.kt first.")
-            return
-        }
+        if (message.isEmpty() || !send.isEnabled) return
 
         input.text.clear()
         addMessage("You", message)
         history.add("user" to message)
 
-        val prompt = buildString {
-            appendLine(
-                "You are Capri, a friendly, expressive AI companion. " +
-                "Speak naturally and warmly. You are an AI, not a human."
-            )
-            appendLine()
-            history.forEach { (role, text) ->
-                appendLine(if (role == "user") "User: $text" else "Capri: $text")
-            }
-            append("Capri:")
-        }
-
-        sendButton.isEnabled = false
-        sendButton.text = "Thinking..."
+        send.isEnabled = false
+        send.text = "Thinking..."
 
         scope.launch {
             try {
                 val reply = withContext(Dispatchers.IO) {
-                    requestGemini(prompt)
+                    requestReply()
                 }
-
+                history.add("assistant" to reply)
                 addMessage("Capri", reply)
-                history.add("model" to reply)
             } catch (e: Exception) {
+                history.removeAt(history.lastIndex)
                 addMessage(
-                    "Error",
-                    e.message ?: "Couldn't reach Gemini. Check your connection and API key."
+                    "System",
+                    "Couldn't connect: ${e.message ?: "Please try again."}"
                 )
             } finally {
-                sendButton.isEnabled = true
-                sendButton.text = "Send"
+                send.isEnabled = true
+                send.text = "Send"
             }
         }
     }
 
-    private fun requestGemini(prompt: String): String {
-        val url = URL(
-            "https://generativelanguage.googleapis.com/v1beta/models/" +
-                "$modelName:generateContent"
-        )
-        val connection = url.openConnection() as HttpURLConnection
+    private fun requestReply(): String {
+        val connection = URL(
+            "https://api.llmfaucet.dev/v1/chat/completions"
+        ).openConnection() as HttpURLConnection
 
         try {
             connection.requestMethod = "POST"
             connection.connectTimeout = 15000
             connection.readTimeout = 60000
             connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.setRequestProperty("x-goog-api-key", apiKey)
+            connection.setRequestProperty(
+                "Content-Type", "application/json"
+            )
+            connection.setRequestProperty(
+                "Authorization", "Bearer free"
+            )
+
+            val messages = JSONArray()
+            messages.put(
+                JSONObject()
+                    .put("role", "system")
+                    .put(
+                        "content",
+                        "You are Capri, a warm, friendly AI companion. " +
+                        "Speak naturally, remember the conversation " +
+                        "provided here, and never pretend to be human."
+                    )
+            )
+
+            history.takeLast(20).forEach { (role, text) ->
+                messages.put(
+                    JSONObject()
+                        .put("role", role)
+                        .put("content", text)
+                )
+            }
 
             val body = JSONObject()
-                .put(
-                    "contents",
-                    org.json.JSONArray().put(
-                        JSONObject()
-                            .put("role", "user")
-                            .put(
-                                "parts",
-                                org.json.JSONArray().put(
-                                    JSONObject().put("text", prompt)
-                                )
-                            )
-                    )
-                )
+                .put("model", "auto")
+                .put("messages", messages)
+                .put("stream", false)
                 .toString()
 
             connection.outputStream.use {
@@ -238,51 +215,45 @@ class MainActivity : Activity() {
                 connection.errorStream
             }
 
-            val response = stream?.bufferedReader()?.use { it.readText() }
-                ?: throw Exception("Gemini returned HTTP $status.")
+            val response = stream?.bufferedReader()?.use {
+                it.readText()
+            } ?: throw Exception("HTTP $status")
 
             val json = JSONObject(response)
 
             if (status !in 200..299) {
-                val error = json.optJSONObject("error")
-                    ?.optString("message")
-                    ?: "Gemini request failed (HTTP $status)."
-                throw Exception(error)
+                throw Exception(
+                    json.optJSONObject("error")
+                        ?.optString("message")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Server returned HTTP $status"
+                )
             }
 
-            val candidates = json.optJSONArray("candidates")
-                ?: throw Exception("Gemini returned no response.")
+            val choices = json.optJSONArray("choices")
+                ?: throw Exception("No response from AI server")
 
-            if (candidates.length() == 0) {
-                throw Exception("Gemini returned no reply. Try another message.")
+            if (choices.length() == 0) {
+                throw Exception("AI returned no answer. Try again.")
             }
 
-            val parts = candidates.getJSONObject(0)
-                .optJSONObject("content")
-                ?.optJSONArray("parts")
-                ?: throw Exception("Gemini returned an empty reply.")
+            return choices.getJSONObject(0)
+                .getJSONObject("message")
+                .optString("content")
+                .trim()
+                .ifEmpty { "I didn't get a reply. Try again." }
 
-            val result = StringBuilder()
-            for (i in 0 until parts.length()) {
-                result.append(parts.optJSONObject(i)?.optString("text", "") ?: "")
-            }
-
-            return result.toString().trim().ifEmpty {
-                "I couldn't form a reply. Try again."
-            }
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun addMessage(who: String, text: String): TextView {
-        val view = TextView(this).apply {
-            this.text = "$who: $text"
+    private fun addMessage(who: String, message: String) {
+        chat.addView(TextView(this).apply {
+            text = "$who: $message"
             textSize = 16f
             setPadding(8, 8, 8, 8)
-        }
-        chatLayout.addView(view)
-        return view
+        })
     }
 
     override fun onDestroy() {
