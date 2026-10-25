@@ -1,5 +1,7 @@
 package com.example.caprimobile
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.NotificationChannel
@@ -7,8 +9,13 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
@@ -20,6 +27,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -46,18 +54,24 @@ class FloatingCompanionService : Service() {
     private val handler = Handler(Looper.getMainLooper())
 
     private var character: ImageView? = null
+    private var borderView: View? = null
     private var bubble: TextView? = null
     private var hiddenInput: EditText? = null
     private var chatWindow: LinearLayout? = null
 
     private lateinit var charParams: WindowManager.LayoutParams
+    private lateinit var borderParams: WindowManager.LayoutParams
     private lateinit var chatParams: WindowManager.LayoutParams
 
     private var chatAnimator: ValueAnimator? = null
-    private var longPressStart = 0L
+    private var borderAnimator: ValueAnimator? = null
+    private var characterGlitchAnimator: ValueAnimator? = null
+
     private var dismissed = false
     private var busy = false
     private var movedDuringTouch = false
+    private var longPressStart = 0L
+    private var characterGlitching = false
 
     private var fadeRunnable: Runnable? = null
     private var typingRunnable: Runnable? = null
@@ -72,6 +86,15 @@ class FloatingCompanionService : Service() {
     private val typingSpeed = 30L
     private val glitchStepDelay = 65L
     private val longPressDuration = 2500L
+
+    private val cyberpunkColors = intArrayOf(
+        Color.rgb(0, 255, 255),
+        Color.rgb(0, 100, 255),
+        Color.rgb(160, 0, 255),
+        Color.rgb(255, 0, 170),
+        Color.rgb(255, 30, 60),
+        Color.rgb(0, 255, 100)
+    )
 
     private val history = mutableListOf<Pair<String, String>>()
 
@@ -151,18 +174,14 @@ class FloatingCompanionService : Service() {
     }
 
     private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        (value * resources.displayMetrics.density)
+            .toInt().coerceAtLeast(1)
 
     private fun createCharacter() {
         val image = ImageView(this).apply {
             setImageResource(R.drawable.capri_closed)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Capri floating companion"
-
-            foreground = GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                setStroke(dp(4), Color.rgb(255, 190, 0))
-            }
         }
 
         val size = dp(150)
@@ -178,6 +197,12 @@ class FloatingCompanionService : Service() {
             x = dp(40)
             y = dp(220)
         }
+
+        character = image
+        wm.addView(image, charParams)
+
+        createCharacterBorder()
+        startBorderColorCycle()
 
         image.setOnTouchListener(object : View.OnTouchListener {
             private var startX = 0
@@ -195,13 +220,20 @@ class FloatingCompanionService : Service() {
                         longPressStart = System.currentTimeMillis()
                         movedDuringTouch = false
 
-                        longPressRunnable?.let { handler.removeCallbacks(it) }
+                        longPressRunnable?.let {
+                            handler.removeCallbacks(it)
+                        }
+
                         longPressRunnable = Runnable {
                             if (!movedDuringTouch && !dismissed) {
                                 dismissCompanion()
                             }
                         }
-                        handler.postDelayed(longPressRunnable!!, longPressDuration)
+
+                        handler.postDelayed(
+                            longPressRunnable!!,
+                            longPressDuration
+                        )
                         return true
                     }
 
@@ -211,7 +243,9 @@ class FloatingCompanionService : Service() {
 
                         if (abs(dx) > dp(8) || abs(dy) > dp(8)) {
                             movedDuringTouch = true
-                            longPressRunnable?.let { handler.removeCallbacks(it) }
+                            longPressRunnable?.let {
+                                handler.removeCallbacks(it)
+                            }
                         }
 
                         if (movedDuringTouch) {
@@ -230,22 +264,28 @@ class FloatingCompanionService : Service() {
                             } catch (_: Exception) {
                             }
 
+                            repositionBorder()
                             repositionChat()
                         }
                         return true
                     }
 
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        longPressRunnable?.let { handler.removeCallbacks(it) }
+                        longPressRunnable?.let {
+                            handler.removeCallbacks(it)
+                        }
 
-                        val held = System.currentTimeMillis() - longPressStart
+                        val held =
+                            System.currentTimeMillis() - longPressStart
 
                         if (e.action == MotionEvent.ACTION_UP &&
-                            !movedDuringTouch && held >= longPressDuration
+                            !movedDuringTouch &&
+                            held >= longPressDuration
                         ) {
                             dismissCompanion()
                         } else if (e.action == MotionEvent.ACTION_UP &&
-                            !movedDuringTouch && !dismissed
+                            !movedDuringTouch &&
+                            !dismissed
                         ) {
                             openKeyboard()
                         }
@@ -255,9 +295,225 @@ class FloatingCompanionService : Service() {
                 return true
             }
         })
+    }
 
-        character = image
-        wm.addView(image, charParams)
+    /*
+     * Determine the visible sprite bounds from the image's alpha channel.
+     * This lets the rectangular border fit Capri rather than the whole
+     * 150dp ImageView. The sprite must have a transparent background.
+     */
+    private fun findVisibleBounds(resId: Int): android.graphics.Rect {
+        val drawable = resources.getDrawable(resId, theme)
+        val width = 256
+        val height = 256
+
+        val bitmap = Bitmap.createBitmap(
+            width,
+            height,
+            Bitmap.Config.ARGB_8888
+        )
+
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, width, height)
+        drawable.draw(canvas)
+
+        var left = width
+        var top = height
+        var right = -1
+        var bottom = -1
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (Color.alpha(pixels[y * width + x]) > 24) {
+                    if (x < left) left = x
+                    if (y < top) top = y
+                    if (x > right) right = x
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+
+        bitmap.recycle()
+
+        return if (right >= left && bottom >= top) {
+            android.graphics.Rect(left, top, right + 1, bottom + 1)
+        } else {
+            android.graphics.Rect(0, 0, width, height)
+        }
+    }
+
+    private fun createCharacterBorder() {
+        val visible = findVisibleBounds(R.drawable.capri_closed)
+        val imageSize = dp(150)
+        val sourceSize = 256f
+
+        val left = (visible.left / sourceSize * imageSize).toInt()
+        val top = (visible.top / sourceSize * imageSize).toInt()
+        val right = (visible.right / sourceSize * imageSize).toInt()
+        val bottom = (visible.bottom / sourceSize * imageSize).toInt()
+
+        val border = View(this).apply {
+            background = createCharacterBorderDrawable(cyberpunkColors[0])
+            elevation = dp(3).toFloat()
+        }
+
+        borderParams = WindowManager.LayoutParams(
+            (right - left + dp(4)).coerceAtLeast(dp(8)),
+            (bottom - top + dp(4)).coerceAtLeast(dp(8)),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = charParams.x + left - dp(2)
+            y = charParams.y + top - dp(2)
+        }
+
+        borderView = border
+        wm.addView(border, borderParams)
+    }
+
+    private fun createCharacterBorderDrawable(color: Int) =
+        GradientDrawable().apply {
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(2), color)
+            cornerRadius = dp(3).toFloat()
+        }
+
+    private fun repositionBorder() {
+        val border = borderView ?: return
+        if (!::charParams.isInitialized || !::borderParams.isInitialized) {
+            return
+        }
+
+        val visible = findVisibleBounds(R.drawable.capri_closed)
+        val imageSize = dp(150)
+        val sourceSize = 256f
+
+        val left = (visible.left / sourceSize * imageSize).toInt()
+        val top = (visible.top / sourceSize * imageSize).toInt()
+
+        borderParams.x = charParams.x + left - dp(2)
+        borderParams.y = charParams.y + top - dp(2)
+
+        try {
+            wm.updateViewLayout(border, borderParams)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun startBorderColorCycle() {
+        borderAnimator?.cancel()
+
+        borderAnimator = ValueAnimator.ofFloat(
+            0f, cyberpunkColors.size.toFloat()
+        ).apply {
+            duration = 1400L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+
+            addUpdateListener { animator ->
+                val border = borderView ?: return@addUpdateListener
+                val position = animator.animatedValue as Float
+                val index = position.toInt().coerceIn(
+                    0, cyberpunkColors.lastIndex
+                )
+                val next = (index + 1) % cyberpunkColors.size
+                val color = blendColors(
+                    cyberpunkColors[index],
+                    cyberpunkColors[next],
+                    position - index
+                )
+
+                border.background = createCharacterBorderDrawable(color)
+            }
+
+            start()
+        }
+    }
+
+    private fun blendColors(a: Int, b: Int, fraction: Float): Int {
+        val f = fraction.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(a) + (Color.red(b) - Color.red(a)) * f).toInt(),
+            (Color.green(a) + (Color.green(b) - Color.green(a)) * f).toInt(),
+            (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * f).toInt()
+        )
+    }
+
+    private fun startCharacterGlitch() {
+        if (characterGlitching || dismissed) return
+        val image = character ?: return
+
+        characterGlitching = true
+        characterGlitchAnimator?.cancel()
+
+        characterGlitchAnimator = ValueAnimator.ofInt(0, 15).apply {
+            duration = 780L
+            interpolator = LinearInterpolator()
+
+            addUpdateListener { animator ->
+                if (dismissed || character !== image) {
+                    return@addUpdateListener
+                }
+
+                val frame = animator.animatedValue as Int
+                val flicker = frame % 4 == 0
+
+                image.alpha = if (flicker) 0.35f else 1f
+                image.translationX = when (frame % 4) {
+                    0 -> dp(4).toFloat()
+                    1 -> -dp(5).toFloat()
+                    2 -> dp(2).toFloat()
+                    else -> 0f
+                }
+
+                image.colorFilter = if (flicker) {
+                    PorterDuffColorFilter(
+                        cyberpunkColors[frame % cyberpunkColors.size],
+                        PorterDuff.Mode.SRC_ATOP
+                    )
+                } else {
+                    null
+                }
+
+                borderView?.alpha = if (flicker) 0.5f else 1f
+            }
+
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (character === image) {
+                        image.alpha = 1f
+                        image.translationX = 0f
+                        image.colorFilter = null
+                    }
+
+                    borderView?.alpha = 1f
+                    characterGlitching = false
+                    characterGlitchAnimator = null
+                }
+            })
+
+            start()
+        }
+    }
+
+    private fun stopCharacterGlitch() {
+        characterGlitchAnimator?.cancel()
+        characterGlitchAnimator = null
+        characterGlitching = false
+
+        character?.apply {
+            alpha = 1f
+            translationX = 0f
+            colorFilter = null
+        }
+
+        borderView?.alpha = 1f
     }
 
     private fun createChatWindow() {
@@ -357,7 +613,6 @@ class FloatingCompanionService : Service() {
 
         val screenW = resources.displayMetrics.widthPixels
         val screenH = resources.displayMetrics.heightPixels
-
         val charW = image.width.takeIf { it > 0 } ?: dp(150)
         val charH = image.height.takeIf { it > 0 } ?: dp(150)
         val panelW = panel.width.takeIf { it > 0 } ?: dp(235)
@@ -383,8 +638,8 @@ class FloatingCompanionService : Service() {
         val startX = chatParams.x
         val startY = chatParams.y
 
-        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 120L
+        chatAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 180L
             interpolator = DecelerateInterpolator()
 
             addUpdateListener { animation ->
@@ -407,14 +662,19 @@ class FloatingCompanionService : Service() {
             }
         }
 
-        chatAnimator = animator
-        animator.start()
+        chatAnimator?.start()
     }
 
     private fun setMouthOpen(open: Boolean) {
-        character?.setImageResource(
-            if (open) R.drawable.capri_open else R.drawable.capri_closed
-        )
+        val resId = if (open) {
+            R.drawable.capri_open
+        } else {
+            R.drawable.capri_closed
+        }
+
+        character?.setImageResource(resId)
+        // The rectangular border remains aligned with the sprite bounds.
+        repositionBorder()
     }
 
     private fun stopMouthAnimation() {
@@ -515,6 +775,8 @@ class FloatingCompanionService : Service() {
         val panel = chatWindow ?: return
         val id = ++glitchRunId
 
+        startCharacterGlitch()
+
         chatAnimator?.cancel()
         chatAnimator = null
 
@@ -547,8 +809,18 @@ class FloatingCompanionService : Service() {
                 }
 
                 panel.alpha = step.first
-                chatParams.x = (originalX + dp(step.second)).coerceAtLeast(0)
-                chatParams.y = (originalY + dp(step.third)).coerceAtLeast(0)
+                chatParams.x = (originalX + dp(step.second))
+                    .coerceIn(
+                        0,
+                        (resources.displayMetrics.widthPixels -
+                            panel.width).coerceAtLeast(0)
+                    )
+                chatParams.y = (originalY + dp(step.third))
+                    .coerceIn(
+                        0,
+                        (resources.displayMetrics.heightPixels -
+                            panel.height).coerceAtLeast(0)
+                    )
 
                 val color = colors[index % colors.size]
                 panel.background = GradientDrawable().apply {
@@ -561,7 +833,7 @@ class FloatingCompanionService : Service() {
                         )
                     )
                     cornerRadius = 8 * density
-                    setStroke(dp(4), Color.rgb(255, 190, 0))
+                    setStroke(dp(4), color)
                 }
 
                 try {
@@ -572,14 +844,7 @@ class FloatingCompanionService : Service() {
                 if (index == steps.lastIndex) {
                     panel.alpha = 1f
                     panel.background = createChatBackground()
-                    chatParams.x = originalX
-                    chatParams.y = originalY
-
-                    try {
-                        wm.updateViewLayout(panel, chatParams)
-                    } catch (_: Exception) {
-                    }
-
+                    repositionChat()
                     stopMouthAnimation()
                 }
             }, index * glitchStepDelay)
@@ -770,10 +1035,19 @@ class FloatingCompanionService : Service() {
         longPressRunnable?.let { handler.removeCallbacks(it) }
 
         stopMouthAnimation()
+        stopCharacterGlitch()
+
+        borderAnimator?.cancel()
+        borderAnimator = null
         scope.cancel()
 
         try {
             character?.let { wm.removeView(it) }
+        } catch (_: Exception) {
+        }
+
+        try {
+            borderView?.let { wm.removeView(it) }
         } catch (_: Exception) {
         }
 
@@ -783,6 +1057,7 @@ class FloatingCompanionService : Service() {
         }
 
         character = null
+        borderView = null
         bubble = null
         hiddenInput = null
         chatWindow = null
@@ -844,11 +1119,19 @@ class FloatingCompanionService : Service() {
         longPressRunnable?.let { handler.removeCallbacks(it) }
 
         stopMouthAnimation()
+        stopCharacterGlitch()
+        borderAnimator?.cancel()
+        borderAnimator = null
         scope.cancel()
 
         if (::wm.isInitialized) {
             try {
                 character?.let { wm.removeView(it) }
+            } catch (_: Exception) {
+            }
+
+            try {
+                borderView?.let { wm.removeView(it) }
             } catch (_: Exception) {
             }
 
@@ -859,6 +1142,7 @@ class FloatingCompanionService : Service() {
         }
 
         character = null
+        borderView = null
         bubble = null
         hiddenInput = null
         chatWindow = null
