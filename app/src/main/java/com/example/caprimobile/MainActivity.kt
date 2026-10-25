@@ -215,7 +215,7 @@ class MainActivity : Activity() {
                     history.add("Capri" to finalReply)
                 } else {
                     replyView.text =
-                        "Capri: The AI returned an empty reply. Please try again."
+                        "Capri received no text from the AI. Please try again."
                 }
 
             } catch (error: CancellationException) {
