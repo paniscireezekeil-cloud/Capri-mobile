@@ -75,8 +75,7 @@ class FloatingCompanionService : Service() {
     private var fadeRunnable: Runnable? = null
     private var typingRunnable: Runnable? = null
     private var longPressRunnable: Runnable? = null
-    private var mouthRunnable: Runnable? = null
-    private var mouthAnimationEnd: Runnable? = null
+    private var mouthSyncRunnable: Runnable? = null
     private var idleRunnable: Runnable? = null
 
     private var glitchRunId = 0
@@ -336,9 +335,9 @@ class FloatingCompanionService : Service() {
                 (8 * density).toInt()
             )
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFCC00"))
+                setColor(Color.parseColor("#CC0D111A"))
                 cornerRadius = 4 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
+                setStroke((1 * density).toInt(), Color.parseColor("#00FFFF"))
             }
             elevation = 4f * density
         }
@@ -346,7 +345,7 @@ class FloatingCompanionService : Service() {
         val userQuery = TextView(this).apply {
             text = ""
             textSize = 10f
-            setTextColor(Color.parseColor("#555555"))
+            setTextColor(Color.parseColor("#88AACC"))
             setPadding(2, 0, 2, 2)
         }
 
@@ -354,7 +353,7 @@ class FloatingCompanionService : Service() {
             text = ""
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#000000"))
+            setTextColor(Color.parseColor("#00FFCC"))
             setPadding(2, 2, 2, 6)
             setOnClickListener { openKeyboard() }
         }
@@ -389,7 +388,7 @@ class FloatingCompanionService : Service() {
             textSize = 11f
             letterSpacing = 0.12f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#333333"))
+            setTextColor(Color.parseColor("#00FFFF"))
             setPadding(4, 2, 2, 2)
             setOnClickListener { submitMessage() }
         }
@@ -487,7 +486,6 @@ class FloatingCompanionService : Service() {
                 
                 history.add("assistant" to reply)
                 showDialogue("TALKING", null, reply)
-                animateTalking(reply)
             } catch (_: Exception) {
             } finally {
                 busy = false
@@ -501,38 +499,9 @@ class FloatingCompanionService : Service() {
     }
 
     private fun stopMouthAnimation() {
-        mouthRunnable?.let { handler.removeCallbacks(it) }
-        mouthAnimationEnd?.let { handler.removeCallbacks(it) }
-        mouthRunnable = null
-        mouthAnimationEnd = null
+        mouthSyncRunnable?.let { handler.removeCallbacks(it) }
+        mouthSyncRunnable = null
         setMouthOpen(false)
-    }
-
-    private fun animateTalking(reply: String) {
-        stopMouthAnimation()
-        if (character == null || reply.isBlank() || dismissed) return
-
-        val duration = (reply.length * 65L).coerceIn(1200L, 7000L)
-        val endAt = System.currentTimeMillis() + duration
-
-        val toggle = object : Runnable {
-            private var open = false
-            override fun run() {
-                if (dismissed || character == null || System.currentTimeMillis() >= endAt) {
-                    stopMouthAnimation()
-                    return
-                }
-                open = !open
-                setMouthOpen(open)
-                handler.postDelayed(this, 180L)
-            }
-        }
-        mouthRunnable = toggle
-        setMouthOpen(true)
-        handler.postDelayed(toggle, 180L)
-
-        mouthAnimationEnd = Runnable { stopMouthAnimation() }
-        handler.postDelayed(mouthAnimationEnd!!, duration)
     }
 
     private fun showDialogue(state: String, userMsg: String?, botMsg: String?) {
@@ -544,6 +513,7 @@ class FloatingCompanionService : Service() {
         typingRunnable = null
         fadeRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable = null
+        stopMouthAnimation()
 
         dialogueGeneration++
         val generation = dialogueGeneration
@@ -565,16 +535,32 @@ class FloatingCompanionService : Service() {
         repositionChat()
 
         var index = 0
+        var mouthState = false
+
         val typingTask = object : Runnable {
             override fun run() {
                 if (generation != dialogueGeneration || dismissed) return
                 if (index < targetText.length) {
-                    dialogueView.append(targetText[index].toString())
+                    val currentChar = targetText[index]
+                    dialogueView.append(currentChar.toString())
                     index++
+
+                    // Lip-sync logic: Open mouth on non-space characters/syllables, snap closed on spaces or toggle rhythmically
+                    if (!currentChar.isWhitespace()) {
+                        mouthState = !mouthState
+                        setMouthOpen(mouthState)
+                    } else {
+                        setMouthOpen(false)
+                        mouthState = false
+                    }
+
                     typingRunnable = this
                     handler.postDelayed(this, TYPING_SPEED)
                 } else {
                     typingRunnable = null
+                    // Stop mouth movement as soon as typing completes
+                    setMouthOpen(false)
+
                     val timer = Runnable {
                         if (generation == dialogueGeneration && !dismissed) {
                             glitchDialogue()
@@ -664,9 +650,9 @@ class FloatingCompanionService : Service() {
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
         panel.background = GradientDrawable().apply {
-            setColor(Color.parseColor("#FFCC00"))
+            setColor(Color.parseColor("#CC0D111A"))
             cornerRadius = 4 * density
-            setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
+            setStroke((1 * density).toInt(), Color.parseColor("#00FFFF"))
         }
 
         chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -699,7 +685,6 @@ class FloatingCompanionService : Service() {
                 if (dismissed) return@launch
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
-                animateTalking(reply)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
