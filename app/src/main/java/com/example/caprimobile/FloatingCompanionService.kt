@@ -48,6 +48,7 @@ class FloatingCompanionService : Service() {
         
         private const val LONG_PRESS_DURATION = 2500L
         private const val DIALOGUE_DELAY = 3000L // 3 seconds inactivity auto-glitch timer
+        private const val IDLE_TRIGGER_DELAY = 50000L // 50 seconds of silence before Capri speaks unprompted
         private const val TYPING_SPEED = 30L
         private const val GLITCH_STEP_DELAY = 65L
     }
@@ -76,6 +77,7 @@ class FloatingCompanionService : Service() {
     private var longPressRunnable: Runnable? = null
     private var mouthRunnable: Runnable? = null
     private var mouthAnimationEnd: Runnable? = null
+    private var idleRunnable: Runnable? = null
 
     private var glitchRunId = 0
     private var dialogueGeneration = 0
@@ -121,6 +123,7 @@ class FloatingCompanionService : Service() {
         val greeting = "You're finally here, D. What's the situation?"
         history.add("assistant" to greeting)
         showDialogue("TALKING", "> you: Hello Capri.", greeting)
+        resetIdleTimer()
     }
 
     private fun createCharacterContainer() {
@@ -182,6 +185,7 @@ class FloatingCompanionService : Service() {
             override fun onTouch(v: View, e: MotionEvent): Boolean {
                 when (e.action) {
                     MotionEvent.ACTION_DOWN -> {
+                        resetIdleTimer()
                         startX = charParams.x
                         startY = charParams.y
                         touchX = e.rawX
@@ -360,6 +364,39 @@ class FloatingCompanionService : Service() {
         safeUpdateViewLayout(panel, chatParams)
     }
 
+    private fun resetIdleTimer() {
+        idleRunnable?.let { handler.removeCallbacks(it) }
+        if (dismissed) return
+
+        val idleTask = Runnable {
+            if (dismissed || busy) return@Runnable
+            triggerProactiveSpontaneousMessage()
+        }
+        idleRunnable = idleTask
+        handler.postDelayed(idleTask, IDLE_TRIGGER_DELAY)
+    }
+
+    private fun triggerProactiveSpontaneousMessage() {
+        if (dismissed || busy) return
+        busy = true
+
+        scope.launch {
+            try {
+                val spontaneousPrompt = "D has been quiet for a while. Say something unprompted to break the silence, tease him, or react to what he's listening to if anything. Keep it to 1-2 short sentences."
+                val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
+                if (dismissed) return@launch
+                
+                history.add("assistant" to reply)
+                showDialogue("TALKING", null, reply)
+                animateTalking(reply)
+            } catch (_: Exception) {
+            } finally {
+                busy = false
+                resetIdleTimer()
+            }
+        }
+    }
+
     private fun setMouthOpen(open: Boolean) {
         character?.setImageResource(if (open) R.drawable.capri_open else R.drawable.capri_closed)
     }
@@ -513,6 +550,7 @@ class FloatingCompanionService : Service() {
         val panel = chatWindow ?: return
         if (dismissed || busy) return
 
+        resetIdleTimer()
         val density = resources.displayMetrics.density
 
         fadeRunnable?.let { handler.removeCallbacks(it) }
@@ -549,6 +587,7 @@ class FloatingCompanionService : Service() {
         val message = input.text.toString().trim()
         if (message.isEmpty() || busy || dismissed) return
 
+        resetIdleTimer()
         input.text.clear()
         busy = true
         history.add("user" to message)
@@ -573,6 +612,7 @@ class FloatingCompanionService : Service() {
                 }
             } finally {
                 busy = false
+                resetIdleTimer()
                 if (!dismissed) {
                     val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(input.windowToken, 0)
@@ -592,8 +632,11 @@ class FloatingCompanionService : Service() {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
 
+            val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
+            val dynamicPersonality = personality + "\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus. React to this music choice naturally if relevant—either roast it if it's trash or give a backhanded compliment if it's good."
+
             val messages = JSONArray().put(
-                JSONObject().put("role", "system").put("content", personality)
+                JSONObject().put("role", "system").put("content", dynamicPersonality)
             )
 
             synchronized(history) {
@@ -634,6 +677,54 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun requestProactiveReply(instruction: String): String {
+        val connection = URL(API_URL).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 90000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+
+            val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
+            val dynamicPersonality = personality + "\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus."
+
+            val messages = JSONArray().put(
+                JSONObject().put("role", "system").put("content", dynamicPersonality)
+            )
+
+            synchronized(history) {
+                history.takeLast(15).forEach { (role, content) ->
+                    messages.put(JSONObject().put("role", role).put("content", content))
+                }
+            }
+
+            messages.put(JSONObject().put("role", "user").put("content", "[$instruction]"))
+
+            val body = JSONObject()
+                .put("model", "auto")
+                .put("messages", messages)
+                .put("stream", false)
+                .toString()
+
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() } ?: throw Exception()
+
+            val json = JSONObject(response)
+            return json.getJSONArray("choices")
+                .getJSONObject(0)
+                .getJSONObject("message")
+                .optString("content")
+                .trim()
+                .ifEmpty { "You still there, choom?" }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun safeUpdateViewLayout(view: View, params: WindowManager.LayoutParams) {
         try {
             if (!dismissed) {
@@ -651,6 +742,7 @@ class FloatingCompanionService : Service() {
         typingRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable?.let { handler.removeCallbacks(it) }
+        idleRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
@@ -707,6 +799,7 @@ class FloatingCompanionService : Service() {
         typingRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable?.let { handler.removeCallbacks(it) }
+        idleRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
