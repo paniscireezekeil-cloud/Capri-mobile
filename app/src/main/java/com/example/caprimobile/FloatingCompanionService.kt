@@ -126,11 +126,10 @@ class FloatingCompanionService : Service() {
         val density = resources.displayMetrics.density
         val size = (130 * density).toInt()
 
-        // Main wrapper frame to hold border + image + status tag
         val container = FrameLayout(this).apply {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#110A1F"))
-                setStroke((2 * density).toInt(), Color.parseColor("#00FFFF")) // Cyan neon border from video
+                setStroke((2 * density).toInt(), Color.parseColor("#00FFFF"))
                 cornerRadius = 4f * density
             }
         }
@@ -145,7 +144,6 @@ class FloatingCompanionService : Service() {
         }
         container.addView(image)
 
-        // Cyberpunk status label overlay (e.g., CAPRI // LISTENING)
         val tag = TextView(this).apply {
             text = "CAPRI // DORMANT"
             textSize = 9f
@@ -230,7 +228,6 @@ class FloatingCompanionService : Service() {
             }
         })
 
-        // We store the image reference pointing to our main avatar image for mouth animations
         character = image
         wm.addView(container, charParams)
     }
@@ -239,7 +236,6 @@ class FloatingCompanionService : Service() {
         val density = resources.displayMetrics.density
         val width = (230 * density).toInt()
 
-        // Exact yellow speech bubble styling from your video reference
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
@@ -249,7 +245,7 @@ class FloatingCompanionService : Service() {
                 (8 * density).toInt()
             )
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFCC00")) // Bright signature yellow box
+                setColor(Color.parseColor("#FFCC00"))
                 cornerRadius = 4 * density
                 setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
             }
@@ -520,6 +516,8 @@ class FloatingCompanionService : Service() {
         val panel = chatWindow ?: return
         if (dismissed || busy) return
 
+        val density = resources.displayMetrics.density
+
         fadeRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable = null
         typingRunnable?.let { handler.removeCallbacks(it) }
@@ -663,7 +661,8 @@ class FloatingCompanionService : Service() {
 
         character = null
         statusTag = null
-        bubble = null
+        dialogueBubble = null
+        userQueryText = null
         hiddenInput = null
         chatWindow = null
 
@@ -718,6 +717,9 @@ class FloatingCompanionService : Service() {
 
         character = null
         statusTag = null
+        dialogueBubble = null
+        userQueryText = null
+        hiddenInput = null
         chatWindow = null
 
         super.onDestroy()
