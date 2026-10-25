@@ -6,12 +6,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -22,7 +20,6 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,62 +45,53 @@ class FloatingCompanionService : Service() {
         var hud: CapriHudView? = null
             private set
 
-        fun send(ctx: Context, action: String) {
-            val intent = Intent(ctx, FloatingCompanionService::class.java)
-                .setAction(action)
+        fun send(context: Context, action: String) {
+            val intent = Intent(
+                context,
+                FloatingCompanionService::class.java
+            ).setAction(action)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 action == ACTION_SUMMON
             ) {
-                ctx.startForegroundService(intent)
+                context.startForegroundService(intent)
             } else {
-                ctx.startService(intent)
+                context.startService(intent)
             }
         }
     }
 
-    private lateinit var windowManager: WindowManager
-
-    private val serviceScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    private var inputPanel: LinearLayout? = null
-    private var messageInput: EditText? = null
+    private lateinit var wm: WindowManager
 
     private var hudParams: WindowManager.LayoutParams? = null
+    private var inputPanel: LinearLayout? = null
     private var inputParams: WindowManager.LayoutParams? = null
+    private var messageInput: EditText? = null
 
     private var dismissed = false
-    private var isSending = false
+    private var sending = false
 
-    private val chatHistory = mutableListOf<JSONObject>()
+    private val scope =
+        CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private val apiKey: String
-        get() = BuildConfig.VIREONIX_API_KEY
+    private val history = mutableListOf<JSONObject>()
 
     private val systemPrompt = """
         You are Capri, D's personal AI companion.
-        Address the user as D when it feels natural.
+        Address the user as D naturally.
         Be warm, witty, helpful, and conversational.
         Keep responses reasonably concise unless D asks for detail.
-        Never claim to have performed actions you cannot actually perform.
     """.trimIndent()
 
     override fun onCreate() {
         super.onCreate()
 
-        windowManager =
-            getSystemService(WINDOW_SERVICE) as WindowManager
+        wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
         createNotificationChannel()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForeground(
-                NOTIFICATION_ID,
-                createNotification()
-            )
+            startForeground(NOTIFICATION_ID, createNotification())
         }
     }
 
@@ -114,6 +102,7 @@ class FloatingCompanionService : Service() {
     ): Int {
         when (intent?.action) {
             ACTION_SUMMON -> summon()
+
             ACTION_DISMISS -> {
                 dismiss()
                 stopSelf()
@@ -132,7 +121,7 @@ class FloatingCompanionService : Service() {
         }
 
         dismissed = false
-        chatHistory.clear()
+        history.clear()
 
         try {
             val view = CapriHudView(this).apply {
@@ -142,12 +131,7 @@ class FloatingCompanionService : Service() {
             val params = WindowManager.LayoutParams(
                 dp(300),
                 dp(250),
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
-                },
+                overlayType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
@@ -158,24 +142,17 @@ class FloatingCompanionService : Service() {
             }
 
             hudParams = params
-
             installHudTouch(view, params)
 
-            windowManager.addView(view, params)
+            wm.addView(view, params)
             hud = view
 
             createInputPanel()
 
-            view.sleep()
-
-            mainHandler.postDelayed({
-                if (!dismissed) {
-                    view.respond(
-                        "",
-                        "Online, D. What are we doing today?"
-                    )
-                }
-            }, 500)
+            view.respond(
+                "",
+                "Online, D. What are we doing today?"
+            )
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -184,12 +161,21 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun overlayType(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+    }
+
     private fun installHudTouch(
         view: CapriHudView,
         params: WindowManager.LayoutParams
     ) {
-        var startX = 0
-        var startY = 0
+        var initialX = 0
+        var initialY = 0
         var touchX = 0f
         var touchY = 0f
         var downTime = 0L
@@ -198,8 +184,8 @@ class FloatingCompanionService : Service() {
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    startX = params.x
-                    startY = params.y
+                    initialX = params.x
+                    initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
                     downTime = System.currentTimeMillis()
@@ -215,12 +201,12 @@ class FloatingCompanionService : Service() {
                         moved = true
                     }
 
-                    params.x = startX + dx
-                    params.y = startY + dy
+                    params.x = initialX + dx
+                    params.y = initialY + dy
 
                     try {
-                        windowManager.updateViewLayout(view, params)
-                        repositionInputPanel()
+                        wm.updateViewLayout(view, params)
+                        repositionInput()
                     } catch (_: Exception) {
                     }
 
@@ -235,7 +221,7 @@ class FloatingCompanionService : Service() {
                         dismiss()
                         stopSelf()
                     } else if (!moved) {
-                        toggleInputPanel()
+                        toggleInput()
                     }
 
                     true
@@ -250,28 +236,18 @@ class FloatingCompanionService : Service() {
     private fun createInputPanel() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = GradientDrawable().apply {
-                setColor(0xEE10131F.toInt())
-                cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), 0xFF00E5FF.toInt())
-            }
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+            setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
         }
 
         val input = EditText(this).apply {
             hint = "Message Capri..."
-            setHintTextColor(0xFF9CA8C8.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            textSize = 14f
-            singleLine = false
+            setTextColor(Color.WHITE)
+            setHintTextColor(0xFFAAAAAA.toInt())
+            textSize = 15f
             maxLines = 3
             imeOptions = EditorInfo.IME_ACTION_SEND
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = GradientDrawable().apply {
-                setColor(0xFF202638.toInt())
-                cornerRadius = dp(8).toFloat()
-            }
 
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_SEND) {
@@ -284,8 +260,7 @@ class FloatingCompanionService : Service() {
         }
 
         val sendButton = Button(this).apply {
-            text = "SEND"
-            setTextColor(0xFF00E5FF.toInt())
+            text = "Send"
             setOnClickListener {
                 submitMessage()
             }
@@ -310,12 +285,7 @@ class FloatingCompanionService : Service() {
         val params = WindowManager.LayoutParams(
             dp(300),
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            },
+            overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
@@ -329,102 +299,97 @@ class FloatingCompanionService : Service() {
         messageInput = input
         inputParams = params
 
-        try {
-            windowManager.addView(panel, params)
-            repositionInputPanel()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        wm.addView(panel, params)
+        repositionInput()
     }
 
-    private fun toggleInputPanel() {
+    private fun toggleInput() {
         val panel = inputPanel ?: return
         val input = messageInput ?: return
 
         if (panel.visibility == View.VISIBLE) {
             closeInput()
-        } else {
-            panel.visibility = View.VISIBLE
-            repositionInputPanel()
-
-            input.requestFocus()
-
-            val imm =
-                getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-
-            input.postDelayed({
-                imm.showSoftInput(
-                    input,
-                    InputMethodManager.SHOW_IMPLICIT
-                )
-            }, 150)
+            return
         }
+
+        panel.visibility = View.VISIBLE
+        repositionInput()
+        input.requestFocus()
+
+        val imm = getSystemService(INPUT_METHOD_SERVICE)
+            as InputMethodManager
+
+        input.postDelayed({
+            imm.showSoftInput(
+                input,
+                InputMethodManager.SHOW_IMPLICIT
+            )
+        }, 150)
     }
 
-    private fun repositionInputPanel() {
+    private fun repositionInput() {
         val panel = inputPanel ?: return
-        val inputLayout = inputParams ?: return
+        val params = inputParams ?: return
         val hudLayout = hudParams ?: return
 
-        inputLayout.x = hudLayout.x
-        inputLayout.y = hudLayout.y + dp(258)
+        params.x = hudLayout.x
+        params.y = hudLayout.y + dp(255)
 
         try {
-            windowManager.updateViewLayout(panel, inputLayout)
+            wm.updateViewLayout(panel, params)
         } catch (_: Exception) {
         }
     }
 
     private fun closeInput() {
-        val panel = inputPanel ?: return
         val input = messageInput
 
-        input?.let {
-            val imm =
-                getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        if (input != null) {
+            val imm = getSystemService(INPUT_METHOD_SERVICE)
+                as InputMethodManager
 
-            imm.hideSoftInputFromWindow(it.windowToken, 0)
-            it.clearFocus()
+            imm.hideSoftInputFromWindow(input.windowToken, 0)
+            input.clearFocus()
         }
 
-        panel.visibility = View.GONE
+        inputPanel?.visibility = View.GONE
     }
 
     private fun submitMessage() {
-        if (isSending || dismissed) return
+        if (sending || dismissed) return
 
         val input = messageInput ?: return
         val message = input.text.toString().trim()
 
-        if (message.isBlank()) return
+        if (message.isEmpty()) return
 
         input.text.clear()
         closeInput()
 
-        chatHistory.add(
+        history.add(
             JSONObject()
                 .put("role", "user")
                 .put("content", message)
         )
 
-        isSending = true
+        sending = true
         hud?.think()
 
-        serviceScope.launch {
-            val answer = withContext(Dispatchers.IO) {
+        scope.launch {
+            val reply = withContext(Dispatchers.IO) {
                 requestReply()
             }
 
-            isSending = false
+            sending = false
 
             if (!dismissed) {
-                chatHistory.add(
+                history.add(
                     JSONObject()
                         .put("role", "assistant")
-                        .put("content", answer)
+                        .put("content", reply)
                 )
 
-                hud?.respond(message, answer)
+                hud?.respond(message, reply)
             }
         }
     }
@@ -433,10 +398,6 @@ class FloatingCompanionService : Service() {
         var connection: HttpURLConnection? = null
 
         return try {
-            if (apiKey.isBlank()) {
-                return "D, my Vireonix API key isn't configured yet."
-            }
-
             val messages = JSONArray()
 
             messages.put(
@@ -445,65 +406,64 @@ class FloatingCompanionService : Service() {
                     .put("content", systemPrompt)
             )
 
-            chatHistory.forEach {
-                messages.put(it)
-            }
+            history.forEach { messages.put(it) }
 
-            val payload = JSONObject()
+            val body = JSONObject()
                 .put("model", "auto")
                 .put("messages", messages)
                 .put("stream", false)
 
-            connection =
-                (URL("https://vireonix.ai/v1/chat/completions")
-                    .openConnection() as HttpURLConnection).apply {
+            connection = (
+                URL("https://vireonix.ai/v1/chat/completions")
+                    .openConnection() as HttpURLConnection
+                ).apply {
                     requestMethod = "POST"
                     connectTimeout = 20000
                     readTimeout = 60000
                     doOutput = true
+
                     setRequestProperty(
                         "Content-Type",
                         "application/json"
                     )
-                    setRequestProperty(
-                        "Authorization",
-                        "Bearer $apiKey"
-                    )
                 }
 
+            // Vireonix does not require an API key or
+            // an Authorization header.
             connection.outputStream.use { output ->
-                output.write(payload.toString().toByteArray(Charsets.UTF_8))
+                output.write(
+                    body.toString().toByteArray(Charsets.UTF_8)
+                )
             }
 
             val status = connection.responseCode
 
-            val stream = if (status in 200..299) {
+            val responseStream = if (status in 200..299) {
                 connection.inputStream
             } else {
                 connection.errorStream
             }
 
-            val responseText = stream?.bufferedReader()?.use {
-                it.readText()
-            }.orEmpty()
+            val responseText =
+                responseStream?.bufferedReader()?.use {
+                    it.readText()
+                }.orEmpty()
 
             if (status !in 200..299) {
-                return "The API returned error $status. Check the API key and connection."
+                return "Vireonix returned HTTP $status. Please try again."
             }
 
-            val response = JSONObject(responseText)
-
-            response
+            JSONObject(responseText)
                 .optJSONArray("choices")
                 ?.optJSONObject(0)
                 ?.optJSONObject("message")
                 ?.optString("content")
                 ?.takeIf { it.isNotBlank() }
-                ?: "I received an empty reply, D. Try again?"
+                ?: "I got an empty reply, D. Try again?"
 
         } catch (e: Exception) {
             e.printStackTrace()
-            "I couldn't reach Vireonix right now, D. Check your connection and try again."
+            "I couldn't connect to Vireonix. Please try again."
         } finally {
             connection?.disconnect()
         }
@@ -516,13 +476,11 @@ class FloatingCompanionService : Service() {
                 "Capri Companion",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps Capri available as a floating companion."
+                description = "Floating Capri companion service"
             }
 
-            val manager =
-                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
-            manager.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
         }
     }
 
@@ -543,7 +501,7 @@ class FloatingCompanionService : Service() {
 
         inputPanel?.let {
             try {
-                windowManager.removeView(it)
+                wm.removeView(it)
             } catch (_: Exception) {
             }
         }
@@ -554,7 +512,7 @@ class FloatingCompanionService : Service() {
 
         hud?.let {
             try {
-                windowManager.removeView(it)
+                wm.removeView(it)
             } catch (_: Exception) {
             }
         }
@@ -562,12 +520,11 @@ class FloatingCompanionService : Service() {
         hud = null
         hudParams = null
 
-        serviceScope.cancel()
+        scope.cancel()
     }
 
-    private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
-    }
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
         dismiss()
