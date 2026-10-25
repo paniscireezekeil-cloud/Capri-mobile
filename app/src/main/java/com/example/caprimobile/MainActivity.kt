@@ -149,10 +149,14 @@ class MainActivity : Activity() {
                 history.add("assistant" to reply)
                 addMessage("Capri", reply)
             } catch (e: Exception) {
-                history.removeAt(history.lastIndex)
+                if (history.isNotEmpty() &&
+                    history.last().first == "user"
+                ) {
+                    history.removeAt(history.lastIndex)
+                }
                 addMessage(
-                    "System",
-                    "Couldn't connect: ${e.message ?: "Please try again."}"
+                    "Error",
+                    e.message ?: "Connection failed. Try again."
                 )
             } finally {
                 send.isEnabled = true
@@ -184,9 +188,9 @@ class MainActivity : Activity() {
                     .put("role", "system")
                     .put(
                         "content",
-                        "You are Capri, a warm, friendly AI companion. " +
-                        "Speak naturally, remember the conversation " +
-                        "provided here, and never pretend to be human."
+                        "You are Capri, a friendly, expressive AI " +
+                        "companion. Speak naturally and warmly. " +
+                        "You are an AI, not a human."
                     )
             )
 
@@ -217,7 +221,7 @@ class MainActivity : Activity() {
 
             val response = stream?.bufferedReader()?.use {
                 it.readText()
-            } ?: throw Exception("HTTP $status")
+            } ?: throw Exception("Server returned HTTP $status")
 
             val json = JSONObject(response)
 
@@ -231,17 +235,17 @@ class MainActivity : Activity() {
             }
 
             val choices = json.optJSONArray("choices")
-                ?: throw Exception("No response from AI server")
+                ?: throw Exception("The server returned no AI response.")
 
             if (choices.length() == 0) {
-                throw Exception("AI returned no answer. Try again.")
+                throw Exception("No answer received. Try again.")
             }
 
             return choices.getJSONObject(0)
                 .getJSONObject("message")
                 .optString("content")
                 .trim()
-                .ifEmpty { "I didn't get a reply. Try again." }
+                .ifEmpty { "I couldn't reply. Try again." }
 
         } finally {
             connection.disconnect()
