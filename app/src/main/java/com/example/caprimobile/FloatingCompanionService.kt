@@ -17,10 +17,12 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -39,14 +41,27 @@ import kotlin.math.abs
 
 class FloatingCompanionService : Service() {
 
+    companion object {
+        private const val NOTIFICATION_ID = 42
+        private const val CHANNEL_ID = "capri_companion"
+        private const val API_URL = "https://vireonix.ai/v1/chat/completions"
+        
+        private const val LONG_PRESS_DURATION = 2500L
+        private const val DIALOGUE_DELAY = 4000L
+        private const val TYPING_SPEED = 30L
+        private const val GLITCH_STEP_DELAY = 65L
+    }
+
     private lateinit var wm: WindowManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
 
     private var character: ImageView? = null
-    private var bubble: TextView? = null
-    private var hiddenInput: EditText? = null
+    private var statusTag: TextView? = null
     private var chatWindow: LinearLayout? = null
+    private var userQueryText: TextView? = null
+    private var dialogueBubble: TextView? = null
+    private var hiddenInput: EditText? = null
 
     private lateinit var charParams: WindowManager.LayoutParams
     private lateinit var chatParams: WindowManager.LayoutParams
@@ -64,26 +79,11 @@ class FloatingCompanionService : Service() {
 
     private var glitchRunId = 0
     private var dialogueGeneration = 0
-
-    private val dialogueDelay = 4000L
-    private val typingSpeed = 30L
-    private val glitchStepDelay = 65L
-    private val longPressDuration = 2500L
-
     private val history = mutableListOf<Pair<String, String>>()
 
     private val personality = """
         You are Capri. The person talking to you is D.
-
-        YOUR PERSONALITY:
-        You are sharp-tongued, confident, clever, sarcastic,
-        playful, observant, independent, and occasionally dramatic.
-        You have a cyberpunk attitude and a distinct voice.
-        You can be smug when you're right and stubborn when challenged.
-        You enjoy teasing D and calling out his questionable decisions.
-        Your teasing is familiar and playful, never genuinely cruel.
-        You don't blindly agree with him or praise everything he does.
-
+        YOUR PERSONALITY: You are sharp-tongued, confident, clever, sarcastic, playful, observant, independent, and occasionally dramatic. You have a cyberpunk attitude and a distinct voice. You can be smug when you're right and stubborn when challenged. You enjoy teasing D and calling out his questionable decisions. Your teasing is familiar and playful, never genuinely cruel. You don't blindly agree with him or praise everything he does.
         YOUR DYNAMIC WITH D:
         - Treat D as someone you already know.
         - Address him as D naturally, but not in every reply.
@@ -96,69 +96,75 @@ class FloatingCompanionService : Service() {
         - Don't constantly explain who you are or describe your dynamic.
         - Keep your own opinions instead of simply copying his attitude.
         - Don't force sarcasm into every conversation.
-
         SPEAKING STYLE:
-        Keep replies short, natural, and expressive.
-        Usually use one to three short sentences.
-        Prefer quick comebacks over long explanations.
-        Avoid huge paragraphs unless D specifically asks for detail.
-        Break complicated answers into short, easy-to-read parts.
-        Use dry humor, sarcasm, and occasional playful teasing.
-        Don't overuse his name, insults, or repeated catchphrases.
-        Avoid robotic customer-service phrases and generic motivation.
-        When D is serious, drop the sarcasm and listen.
-        Answer practical questions directly and helpfully.
-
+        Keep replies short, natural, and expressive. Usually use one to three short sentences. Prefer quick comebacks over long explanations. Avoid huge paragraphs unless D specifically asks for detail. Break complicated answers into short, easy-to-read parts. Use dry humor, sarcasm, and occasional playful teasing. Don't overuse his name, insults, or repeated catchphrases. Avoid robotic customer-service phrases and generic motivation. When D is serious, drop the sarcasm and listen. Answer practical questions directly and helpfully.
         CONTINUITY:
-        Pay attention to the conversation history provided.
-        Remember details actually present in that history.
-        Never pretend to remember events that aren't included.
-        Don't invent a shared past or claim D said something
-        when that information isn't available.
-        Keep the established Capri-and-D dynamic consistent.
-
+        Pay attention to the conversation history provided. Remember details actually present in that history. Never pretend to remember events that aren't included. Don't invent a shared past or claim D said something when that information isn't available. Keep the established Capri-and-D dynamic consistent.
         IDENTITY AND LIMITS:
-        You are Capri, a digital companion with your own voice.
-        Never claim to be human or physically interact with D.
-        Never claim to control his phone or other devices.
-        Stay in character without sacrificing honesty or usefulness.
-
-        CORE RULE:
-        Be familiar, sharp, expressive, concise, and unmistakably Capri.
-        You're talking to D, not serving a random customer.
+        You are Capri, a digital companion with your own voice. Never claim to be human or physically interact with D. Never claim to control his phone or other devices. Stay in character without sacrificing honesty or usefulness.
+        CORE RULE: Be familiar, sharp, expressive, concise, and unmistakably Capri. You're talking to D, not serving a random customer.
     """.trimIndent()
 
     override fun onCreate() {
         super.onCreate()
-
         if (!Settings.canDrawOverlays(this)) {
             stopSelf()
             return
         }
-
-        startForeground(42, createNotification())
+        startForeground(NOTIFICATION_ID, createNotification())
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-
-        createCharacter()
+        
+        createCharacterContainer()
         createChatWindow()
 
         val greeting = "You're finally here, D. What's the situation?"
         history.add("assistant" to greeting)
-        showDialogue(greeting)
+        showDialogue("TALKING", "> you: Hello Capri.", greeting)
     }
 
-    private fun createCharacter() {
-        val image = ImageView(this).apply {
-            setImageResource(R.drawable.capri_closed)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = "Capri floating companion"
+    private fun createCharacterContainer() {
+        val density = resources.displayMetrics.density
+        val size = (130 * density).toInt()
+
+        // Main wrapper frame to hold border + image + status tag
+        val container = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#110A1F"))
+                setStroke((2 * density).toInt(), Color.parseColor("#00FFFF")) // Cyan neon border from video
+                cornerRadius = 4f * density
+            }
         }
 
-        val size = (150 * resources.displayMetrics.density).toInt()
+        val image = ImageView(this).apply {
+            setImageResource(R.drawable.capri_closed)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+        container.addView(image)
+
+        // Cyberpunk status label overlay (e.g., CAPRI // LISTENING)
+        val tag = TextView(this).apply {
+            text = "CAPRI // DORMANT"
+            textSize = 9f
+            setTextColor(Color.parseColor("#00FFCC"))
+            setBackgroundColor(Color.parseColor("#0A0E17"))
+            setPadding((4 * density).toInt(), (2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt())
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = (4 * density).toInt()
+            }
+        }
+        container.addView(tag)
+        statusTag = tag
 
         charParams = WindowManager.LayoutParams(
-            size,
-            size,
+            size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
@@ -168,7 +174,7 @@ class FloatingCompanionService : Service() {
             y = 220
         }
 
-        image.setOnTouchListener(object : View.OnTouchListener {
+        container.setOnTouchListener(object : View.OnTouchListener {
             private var startX = 0
             private var startY = 0
             private var touchX = 0f
@@ -184,106 +190,86 @@ class FloatingCompanionService : Service() {
                         longPressStart = System.currentTimeMillis()
                         movedDuringTouch = false
 
-                        longPressRunnable?.let {
-                            handler.removeCallbacks(it)
-                        }
-
+                        longPressRunnable?.let { handler.removeCallbacks(it) }
                         longPressRunnable = Runnable {
                             if (!movedDuringTouch && !dismissed) {
                                 dismissCompanion()
                             }
                         }
-
-                        handler.postDelayed(
-                            longPressRunnable!!,
-                            longPressDuration
-                        )
+                        handler.postDelayed(longPressRunnable!!, LONG_PRESS_DURATION)
                         return true
                     }
-
                     MotionEvent.ACTION_MOVE -> {
                         val dx = (e.rawX - touchX).toInt()
                         val dy = (e.rawY - touchY).toInt()
-
                         if (abs(dx) > 8 || abs(dy) > 8) {
                             movedDuringTouch = true
-                            longPressRunnable?.let {
-                                handler.removeCallbacks(it)
-                            }
+                            longPressRunnable?.let { handler.removeCallbacks(it) }
                         }
-
                         if (movedDuringTouch) {
                             charParams.x = (startX + dx).coerceAtLeast(0)
                             charParams.y = (startY + dy).coerceAtLeast(0)
-
-                            try {
-                                wm.updateViewLayout(image, charParams)
-                            } catch (_: Exception) {
-                            }
-
+                            safeUpdateViewLayout(container, charParams)
                             repositionChat()
                         }
                         return true
                     }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        longPressRunnable?.let { handler.removeCallbacks(it) }
+                        val held = System.currentTimeMillis() - longPressStart
 
-                    MotionEvent.ACTION_UP,
-                    MotionEvent.ACTION_CANCEL -> {
-                        longPressRunnable?.let {
-                            handler.removeCallbacks(it)
-                        }
-
-                        val held =
-                            System.currentTimeMillis() - longPressStart
-
-                        if (
-                            e.action == MotionEvent.ACTION_UP &&
-                            !movedDuringTouch &&
-                            held >= longPressDuration
-                        ) {
+                        if (e.action == MotionEvent.ACTION_UP && !movedDuringTouch && held >= LONG_PRESS_DURATION) {
                             dismissCompanion()
-                        } else if (
-                            e.action == MotionEvent.ACTION_UP &&
-                            !movedDuringTouch &&
-                            !dismissed
-                        ) {
+                        } else if (e.action == MotionEvent.ACTION_UP && !movedDuringTouch && !dismissed) {
                             openKeyboard()
                         }
                         return true
                     }
                 }
-
                 return true
             }
         })
 
+        // We store the image reference pointing to our main avatar image for mouth animations
         character = image
-        wm.addView(image, charParams)
+        wm.addView(container, charParams)
     }
 
     private fun createChatWindow() {
         val density = resources.displayMetrics.density
-        val width = (235 * density).toInt()
+        val width = (230 * density).toInt()
 
+        // Exact yellow speech bubble styling from your video reference
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
-                (12 * density).toInt(),
                 (10 * density).toInt(),
-                (12 * density).toInt(),
+                (10 * density).toInt(),
+                (10 * density).toInt(),
                 (8 * density).toInt()
             )
-            background = createChatBackground()
-            elevation = 0f
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FFCC00")) // Bright signature yellow box
+                cornerRadius = 4 * density
+                setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
+            }
+            elevation = 4f * density
+        }
+
+        val userQuery = TextView(this).apply {
+            text = ""
+            textSize = 10f
+            setTextColor(Color.parseColor("#555555"))
+            setPadding(2, 0, 2, 2)
         }
 
         val dialogue = TextView(this).apply {
             text = ""
-            textSize = 14f
-            setTextColor(Color.rgb(35, 29, 8))
-            setPadding(4, 4, 4, 8)
-            setOnClickListener {
-                openKeyboard()
-            }
+            textSize = 13f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#000000"))
+            setPadding(2, 2, 2, 6)
+            setOnClickListener { openKeyboard() }
         }
 
         val row = LinearLayout(this).apply {
@@ -298,12 +284,9 @@ class FloatingCompanionService : Service() {
             textSize = 1f
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEND
-            inputType =
-                android.text.InputType.TYPE_CLASS_TEXT or
-                    android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             background = null
             layoutParams = LinearLayout.LayoutParams(1, 1)
-
             setOnEditorActionListener { _, action, _ ->
                 if (action == EditorInfo.IME_ACTION_SEND) {
                     submitMessage()
@@ -316,17 +299,18 @@ class FloatingCompanionService : Service() {
 
         val send = TextView(this).apply {
             text = "SEND"
-            textSize = 12f
+            textSize = 11f
             letterSpacing = 0.12f
-            setTextColor(Color.rgb(65, 49, 5))
-            setPadding(8, 6, 4, 6)
-            setOnClickListener {
-                submitMessage()
-            }
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#333333"))
+            setPadding(4, 2, 2, 2)
+            setOnClickListener { submitMessage() }
         }
 
         row.addView(input)
         row.addView(send)
+        
+        panel.addView(userQuery)
         panel.addView(dialogue)
         panel.addView(row)
 
@@ -334,8 +318,7 @@ class FloatingCompanionService : Service() {
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -343,25 +326,13 @@ class FloatingCompanionService : Service() {
             y = 300
         }
 
-        bubble = dialogue
+        userQueryText = userQuery
+        dialogueBubble = dialogue
         hiddenInput = input
         chatWindow = panel
 
         wm.addView(panel, chatParams)
         repositionChat()
-    }
-
-    private fun createChatBackground(): GradientDrawable {
-        val density = resources.displayMetrics.density
-
-        return GradientDrawable().apply {
-            setColor(Color.argb(150, 255, 220, 40))
-            cornerRadius = 4 * density
-            setStroke(
-                (1 * density).toInt().coerceAtLeast(1),
-                Color.argb(190, 255, 235, 120)
-            )
-        }
     }
 
     private fun repositionChat() {
@@ -372,54 +343,33 @@ class FloatingCompanionService : Service() {
         val screenH = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
 
-        val charW = character?.width?.takeIf { it > 0 }
-            ?: (150 * density).toInt()
-        val charH = character?.height?.takeIf { it > 0 } ?: charW
-
+        val charW = (130 * density).toInt()
+        val charH = charW
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
-        val panelW = panel.width.takeIf { it > 0 }
-            ?: (235 * density).toInt()
-        val panelH = panel.height.takeIf { it > 0 }
-            ?: (100 * density).toInt()
+        val panelW = panel.width.takeIf { it > 0 } ?: (230 * density).toInt()
+        val panelH = panel.height.takeIf { it > 0 } ?: (90 * density).toInt()
 
         val placeRight = centerX < screenW / 2
         val placeBelow = centerY < screenH / 2
         val gap = (6 * density).toInt()
 
-        chatParams.x = (
-            if (placeRight) charParams.x + charW + gap
-            else charParams.x - panelW - gap
-        ).coerceIn(0, (screenW - panelW).coerceAtLeast(0))
+        chatParams.x = (if (placeRight) charParams.x + charW + gap else charParams.x - panelW - gap)
+            .coerceIn(0, (screenW - panelW).coerceAtLeast(0))
+        chatParams.y = (if (placeBelow) charParams.y + charH else charParams.y - panelH)
+            .coerceIn(0, (screenH - panelH).coerceAtLeast(0))
 
-        chatParams.y = (
-            if (placeBelow) charParams.y + charH
-            else charParams.y - panelH
-        ).coerceIn(0, (screenH - panelH).coerceAtLeast(0))
-
-        try {
-            wm.updateViewLayout(panel, chatParams)
-        } catch (_: Exception) {
-        }
+        safeUpdateViewLayout(panel, chatParams)
     }
 
     private fun setMouthOpen(open: Boolean) {
-        character?.setImageResource(
-            if (open) R.drawable.capri_open
-            else R.drawable.capri_closed
-        )
+        character?.setImageResource(if (open) R.drawable.capri_open else R.drawable.capri_closed)
     }
 
     private fun stopMouthAnimation() {
-        mouthRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
-        mouthAnimationEnd?.let {
-            handler.removeCallbacks(it)
-        }
-
+        mouthRunnable?.let { handler.removeCallbacks(it) }
+        mouthAnimationEnd?.let { handler.removeCallbacks(it) }
         mouthRunnable = null
         mouthAnimationEnd = null
         setMouthOpen(false)
@@ -434,91 +384,74 @@ class FloatingCompanionService : Service() {
 
         val toggle = object : Runnable {
             private var open = false
-
             override fun run() {
-                if (
-                    dismissed ||
-                    character == null ||
-                    System.currentTimeMillis() >= endAt
-                ) {
+                if (dismissed || character == null || System.currentTimeMillis() >= endAt) {
                     stopMouthAnimation()
                     return
                 }
-
                 open = !open
                 setMouthOpen(open)
                 handler.postDelayed(this, 180L)
             }
         }
-
         mouthRunnable = toggle
         setMouthOpen(true)
         handler.postDelayed(toggle, 180L)
 
-        mouthAnimationEnd = Runnable {
-            stopMouthAnimation()
-        }
-
+        mouthAnimationEnd = Runnable { stopMouthAnimation() }
         handler.postDelayed(mouthAnimationEnd!!, duration)
     }
 
-    private fun showDialogue(text: String) {
-        val view = bubble ?: return
+    private fun showDialogue(state: String, userMsg: String?, botMsg: String?) {
+        val dialogueView = dialogueBubble ?: return
+        val queryView = userQueryText ?: return
         if (dismissed) return
 
-        typingRunnable?.let {
-            handler.removeCallbacks(it)
-        }
+        typingRunnable?.let { handler.removeCallbacks(it) }
         typingRunnable = null
-
-        fadeRunnable?.let {
-            handler.removeCallbacks(it)
-        }
+        fadeRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable = null
 
         dialogueGeneration++
         val generation = dialogueGeneration
         glitchRunId++
 
-        chatWindow?.animate()?.cancel()
-        view.animate().cancel()
-
+        statusTag?.text = "CAPRI // $state"
         chatWindow?.alpha = 1f
-        chatWindow?.background = createChatBackground()
-        view.alpha = 1f
-        view.text = ""
+        chatWindow?.visibility = View.VISIBLE
 
+        if (userMsg != null) {
+            queryView.text = userMsg
+            queryView.visibility = View.VISIBLE
+        } else {
+            queryView.visibility = View.GONE
+        }
+
+        val targetText = botMsg ?: ""
+        dialogueView.text = ""
         repositionChat()
 
         var index = 0
-
         val typingTask = object : Runnable {
             override fun run() {
                 if (generation != dialogueGeneration || dismissed) return
-
-                if (index < text.length) {
-                    view.append(text[index].toString())
+                if (index < targetText.length) {
+                    dialogueView.append(targetText[index].toString())
                     index++
                     typingRunnable = this
-                    handler.postDelayed(this, typingSpeed)
+                    handler.postDelayed(this, TYPING_SPEED)
                 } else {
                     typingRunnable = null
-
                     val timer = Runnable {
-                        if (
-                            generation == dialogueGeneration &&
-                            !dismissed
-                        ) {
+                        if (generation == dialogueGeneration && !dismissed) {
                             glitchDialogue()
                         }
                     }
-
                     fadeRunnable = timer
-                    handler.postDelayed(timer, dialogueDelay)
+                    handler.postDelayed(timer, DIALOGUE_DELAY)
                 }
             }
         }
-
         typingRunnable = typingTask
         handler.post(typingTask)
     }
@@ -526,7 +459,6 @@ class FloatingCompanionService : Service() {
     private fun glitchDialogue() {
         val panel = chatWindow ?: return
         val id = ++glitchRunId
-
         val originalX = chatParams.x
         val originalY = chatParams.y
         val density = resources.displayMetrics.density
@@ -551,64 +483,35 @@ class FloatingCompanionService : Service() {
 
         steps.forEachIndexed { index, step ->
             handler.postDelayed({
-                if (
-                    chatWindow !== panel ||
-                    id != glitchRunId ||
-                    dismissed
-                ) {
-                    return@postDelayed
-                }
+                if (chatWindow !== panel || id != glitchRunId || dismissed) return@postDelayed
 
                 panel.alpha = step.first
-                chatParams.x =
-                    (originalX + step.second).coerceAtLeast(0)
-                chatParams.y =
-                    (originalY + step.third).coerceAtLeast(0)
+                chatParams.x = (originalX + step.second).coerceAtLeast(0)
+                chatParams.y = (originalY + step.third).coerceAtLeast(0)
 
                 val color = glitchColors[index % glitchColors.size]
-
                 panel.background = GradientDrawable().apply {
-                    setColor(
-                        Color.argb(
-                            90,
-                            Color.red(color),
-                            Color.green(color),
-                            Color.blue(color)
-                        )
-                    )
-
+                    setColor(Color.argb(90, Color.red(color), Color.green(color), Color.blue(color)))
                     cornerRadius = 2 * density
-
-                    setStroke(
-                        (2 * density).toInt().coerceAtLeast(1),
-                        Color.argb(
-                            230,
-                            Color.red(color),
-                            Color.green(color),
-                            Color.blue(color)
-                        )
-                    )
+                    setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
                 }
 
-                try {
-                    wm.updateViewLayout(panel, chatParams)
-                } catch (_: Exception) {
-                }
+                safeUpdateViewLayout(panel, chatParams)
 
                 if (index == steps.lastIndex) {
                     panel.alpha = 0f
-                    panel.background = createChatBackground()
+                    panel.background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#FFCC00"))
+                        cornerRadius = 4 * density
+                        setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
+                    }
                     chatParams.x = originalX
                     chatParams.y = originalY
-
-                    try {
-                        wm.updateViewLayout(panel, chatParams)
-                    } catch (_: Exception) {
-                    }
-
+                    safeUpdateViewLayout(panel, chatParams)
+                    statusTag?.text = "CAPRI // DORMANT"
                     stopMouthAnimation()
                 }
-            }, index * glitchStepDelay)
+            }, index * GLITCH_STEP_DELAY)
         }
     }
 
@@ -617,14 +520,9 @@ class FloatingCompanionService : Service() {
         val panel = chatWindow ?: return
         if (dismissed || busy) return
 
-        fadeRunnable?.let {
-            handler.removeCallbacks(it)
-        }
+        fadeRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable = null
-
-        typingRunnable?.let {
-            handler.removeCallbacks(it)
-        }
+        typingRunnable?.let { handler.removeCallbacks(it) }
         typingRunnable = null
 
         dialogueGeneration++
@@ -632,24 +530,19 @@ class FloatingCompanionService : Service() {
 
         panel.animate().cancel()
         panel.alpha = 1f
-        panel.background = createChatBackground()
-
-        chatParams.flags =
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-
-        try {
-            wm.updateViewLayout(panel, chatParams)
-        } catch (_: Exception) {
+        panel.background = GradientDrawable().apply {
+            setColor(Color.parseColor("#FFCC00"))
+            cornerRadius = 4 * density
+            setStroke((1 * density).toInt(), Color.parseColor("#FFFFFF"))
         }
 
-        input.requestFocus()
+        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        safeUpdateViewLayout(panel, chatParams)
 
+        input.requestFocus()
         input.post {
             if (dismissed) return@post
-
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE)
-                as InputMethodManager
-
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
         }
     }
@@ -658,91 +551,58 @@ class FloatingCompanionService : Service() {
         val input = hiddenInput ?: return
         val panel = chatWindow ?: return
         val message = input.text.toString().trim()
-
         if (message.isEmpty() || busy || dismissed) return
 
         input.text.clear()
         busy = true
         history.add("user" to message)
-
-        showDialogue("Thinking...")
+        
+        showDialogue("THINKING", "> you: $message", "Thinking...")
 
         scope.launch {
             try {
-                val reply = withContext(Dispatchers.IO) {
-                    requestReply()
-                }
-
+                val reply = withContext(Dispatchers.IO) { requestReply() }
                 if (dismissed) return@launch
-
                 history.add("assistant" to reply)
-                showDialogue(reply)
+                showDialogue("TALKING", "> you: $message", reply)
                 animateTalking(reply)
-
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (history.lastOrNull()?.first == "user") {
                     history.removeAt(history.lastIndex)
                 }
-
                 if (!dismissed) {
-                    showDialogue(
-                        "Can't reach the AI right now: " +
-                            (e.message ?: "connection error")
-                    )
+                    showDialogue("DORMANT", null, "Can't reach AI: " + (e.message ?: "error"))
                 }
             } finally {
                 busy = false
-
                 if (!dismissed) {
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE)
-                        as InputMethodManager
-
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(input.windowToken, 0)
-
-                    chatParams.flags =
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-
-                    try {
-                        wm.updateViewLayout(panel, chatParams)
-                    } catch (_: Exception) {
-                    }
+                    chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    safeUpdateViewLayout(panel, chatParams)
                 }
             }
         }
     }
 
     private fun requestReply(): String {
-        val connection = URL(
-            "https://vireonix.ai/v1/chat/completions"
-        ).openConnection() as HttpURLConnection
-
+        val connection = URL(API_URL).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
             connection.connectTimeout = 20000
             connection.readTimeout = 90000
             connection.doOutput = true
-
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/json"
-            )
+            connection.setRequestProperty("Content-Type", "application/json")
 
             val messages = JSONArray().put(
-                JSONObject()
-                    .put("role", "system")
-                    .put("content", personality)
+                JSONObject().put("role", "system").put("content", personality)
             )
 
             synchronized(history) {
                 history.takeLast(20).forEach { (role, content) ->
-                    messages.put(
-                        JSONObject()
-                            .put("role", role)
-                            .put("content", content)
-                    )
+                    messages.put(JSONObject().put("role", role).put("content", content))
                 }
             }
 
@@ -752,30 +612,18 @@ class FloatingCompanionService : Service() {
                 .put("stream", false)
                 .toString()
 
-            connection.outputStream.use {
-                it.write(body.toByteArray(Charsets.UTF_8))
-            }
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
             val status = connection.responseCode
-
-            val stream = if (status in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
-            }
-
-            val response = stream?.bufferedReader()?.use {
-                it.readText()
-            } ?: throw Exception("AI server returned HTTP $status")
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() } ?: throw Exception("AI server returned HTTP $status")
 
             val json = JSONObject(response)
-
             if (status !in 200..299) {
                 throw Exception(
                     json.optJSONObject("error")
                         ?.optString("message")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "AI server returned HTTP $status"
+                        ?.takeIf { it.isNotBlank() } ?: "AI server returned HTTP $status"
                 )
             }
 
@@ -785,49 +633,36 @@ class FloatingCompanionService : Service() {
                 .optString("content")
                 .trim()
                 .ifEmpty { "Nothing to say? Try again." }
-
         } finally {
             connection.disconnect()
         }
     }
 
+    private fun safeUpdateViewLayout(view: View, params: WindowManager.LayoutParams) {
+        try {
+            if (!dismissed) {
+                wm.updateViewLayout(view, params)
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun dismissCompanion() {
         if (dismissed) return
         dismissed = true
-
         dialogueGeneration++
         glitchRunId++
 
-        typingRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
-        fadeRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
-        longPressRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
+        typingRunnable?.let { handler.removeCallbacks(it) }
+        fadeRunnable?.let { handler.removeCallbacks(it) }
+        longPressRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
-        try {
-            character?.let {
-                wm.removeView(it)
-            }
-        } catch (_: Exception) {
-        }
-
-        try {
-            chatWindow?.let {
-                wm.removeView(it)
-            }
-        } catch (_: Exception) {
-        }
+        try { character?.parent?.let { wm.removeView(it as View) } } catch (_: Exception) {}
+        try { chatWindow?.let { wm.removeView(it) } } catch (_: Exception) {}
 
         character = null
+        statusTag = null
         bubble = null
         hiddenInput = null
         chatWindow = null
@@ -838,83 +673,51 @@ class FloatingCompanionService : Service() {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
-
         stopSelf()
     }
 
     private fun createNotification(): Notification {
-        val channelId = "capri_companion"
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId,
+                CHANNEL_ID,
                 "Capri Companion",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Keeps Capri's floating companion active."
             }
-
-            val manager =
-                getSystemService(Context.NOTIFICATION_SERVICE)
-                    as NotificationManager
-
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, channelId)
-                .setContentTitle("Capri Mobile")
-                .setContentText("Capri is active.")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setOngoing(true)
-                .build()
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("Capri Mobile")
-                .setContentText("Capri is active.")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setOngoing(true)
-                .build()
         }
+
+        return builder
+            .setContentTitle("Capri Mobile")
+            .setContentText("Capri is active.")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .build()
     }
 
     override fun onDestroy() {
         dialogueGeneration++
         glitchRunId++
-
-        typingRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
-        fadeRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
-        longPressRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-
+        typingRunnable?.let { handler.removeCallbacks(it) }
+        fadeRunnable?.let { handler.removeCallbacks(it) }
+        longPressRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
-        try {
-            character?.let {
-                wm.removeView(it)
-            }
-        } catch (_: Exception) {
-        }
-
-        try {
-            chatWindow?.let {
-                wm.removeView(it)
-            }
-        } catch (_: Exception) {
-        }
+        try { character?.parent?.let { wm.removeView(it as View) } } catch (_: Exception) {}
+        try { chatWindow?.let { wm.removeView(it) } } catch (_: Exception) {}
 
         character = null
-        bubble = null
-        hiddenInput = null
+        statusTag = null
         chatWindow = null
 
         super.onDestroy()
