@@ -17,6 +17,7 @@ import android.widget.Toast
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var chatLayout: LinearLayout
     private lateinit var sendButton: Button
     private lateinit var input: EditText
+    private lateinit var scroll: ScrollView
 
     private val model by lazy {
         Firebase.ai(
@@ -47,19 +49,19 @@ class MainActivity : Activity() {
             setPadding(24, 24, 24, 16)
         }
 
-        val title = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "Capri Mobile"
             textSize = 26f
             gravity = Gravity.CENTER
-        }
+        })
 
-        val description = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "Your companion, always nearby."
             textSize = 15f
             gravity = Gravity.CENTER
-        }
+        })
 
-        val permissionButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "1. Allow floating overlay"
             setOnClickListener {
                 startActivity(
@@ -69,9 +71,9 @@ class MainActivity : Activity() {
                     )
                 )
             }
-        }
+        })
 
-        val startButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "2. Summon companion"
             setOnClickListener {
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -87,16 +89,11 @@ class MainActivity : Activity() {
                             FloatingCompanionService::class.java
                         )
                     )
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Companion summoned!",
-                        Toast.LENGTH_SHORT
-                    ).show()
                 }
             }
-        }
+        })
 
-        val stopButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "3. Dismiss companion"
             setOnClickListener {
                 stopService(
@@ -106,20 +103,21 @@ class MainActivity : Activity() {
                     )
                 )
             }
-        }
+        })
 
-        val chatTitle = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "Chat with Capri"
             textSize = 20f
             setPadding(0, 12, 0, 8)
-        }
+        })
 
         chatLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 8)
         }
 
-        val scroll = ScrollView(this).apply {
+        scroll = ScrollView(this).apply {
+            isFillViewport = true
             addView(
                 chatLayout,
                 ViewGroup.LayoutParams(
@@ -128,25 +126,6 @@ class MainActivity : Activity() {
                 )
             )
         }
-
-        input = EditText(this).apply {
-            hint = "Talk to Capri..."
-            maxLines = 3
-        }
-
-        sendButton = Button(this).apply {
-            text = "Send"
-            setOnClickListener {
-                sendMessage()
-            }
-        }
-
-        root.addView(title)
-        root.addView(description)
-        root.addView(permissionButton)
-        root.addView(startButton)
-        root.addView(stopButton)
-        root.addView(chatTitle)
 
         root.addView(
             scroll,
@@ -157,18 +136,38 @@ class MainActivity : Activity() {
             )
         )
 
+        input = EditText(this).apply {
+            hint = "Talk to Capri..."
+            maxLines = 3
+        }
         root.addView(input)
+
+        sendButton = Button(this).apply {
+            text = "Send"
+            setOnClickListener { sendMessage() }
+        }
         root.addView(sendButton)
 
         setContentView(root)
 
-        addMessage(
-            "Capri",
-            "Hey! I'm here. What do you want to talk about?"
-        )
+        addMessage("Capri", "Hey! I'm here. What do you want to talk about?")
+    }
+
+    private fun addMessage(who: String, message: String): TextView {
+        val view = TextView(this).apply {
+            text = "$who: $message"
+            textSize = 16f
+            setPadding(8, 8, 8, 8)
+        }
+
+        chatLayout.addView(view)
+        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+        return view
     }
 
     private fun sendMessage() {
+        if (!sendButton.isEnabled) return
+
         val message = input.text.toString().trim()
         if (message.isEmpty()) return
 
@@ -176,13 +175,14 @@ class MainActivity : Activity() {
         sendButton.isEnabled = false
         addMessage("You", message)
 
-        val thinking = addMessage("Capri", "Thinking...")
+        val replyView = addMessage("Capri", "")
+        val fullReply = StringBuilder()
 
         val prompt = buildString {
             append(
                 "You are Capri, a friendly, expressive AI companion. " +
-                    "Speak naturally and warmly. Keep replies conversational. " +
-                    "You are an AI, not a human.\n\n"
+                "Speak naturally and warmly. Keep replies conversational. " +
+                "You are an AI, not a human.\n\n"
             )
 
             history.forEach { (role, content) ->
@@ -194,51 +194,46 @@ class MainActivity : Activity() {
 
         scope.launch {
             try {
-                val response = withContext(Dispatchers.IO) {
-                    model.generateContent(prompt)
+                model.generateContentStream(prompt).collect { chunk ->
+                    val piece = chunk.text.orEmpty()
+
+                    if (piece.isNotEmpty()) {
+                        fullReply.append(piece)
+
+                        replyView.text = "Capri: $fullReply"
+
+                        scroll.post {
+                            scroll.fullScroll(ScrollView.FOCUS_DOWN)
+                        }
+                    }
                 }
 
-                chatLayout.removeView(thinking)
+                val finalReply = fullReply.toString().trim()
 
-                val reply = response.text
-                    ?: "I couldn't think of a reply. Try again?"
+                if (finalReply.isNotEmpty()) {
+                    history.add("User" to message)
+                    history.add("Capri" to finalReply)
+                } else {
+                    replyView.text =
+                        "Capri: The AI returned an empty reply. Please try again."
+                }
 
-                history.add("User" to message)
-                history.add("Capri" to reply)
-
-                addMessage("Capri", reply)
-
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                chatLayout.removeView(thinking)
+                val details = error.localizedMessage
+                    ?: error.javaClass.simpleName
 
-                addMessage(
-                    "Capri",
-                    "I couldn't connect just now. Check your internet and Firebase setup."
-                )
-
-                Toast.makeText(
-                    this@MainActivity,
-                    error.message ?: "AI request failed",
-                    Toast.LENGTH_LONG
-                ).show()
+                replyView.text =
+                    if (fullReply.isNotEmpty()) {
+                        "Capri: $fullReply\n\n(Connection interrupted: $details)"
+                    } else {
+                        "Capri couldn't get a response: $details"
+                    }
             } finally {
                 sendButton.isEnabled = true
             }
         }
-    }
-
-    private fun addMessage(
-        who: String,
-        text: String
-    ): TextView {
-        val view = TextView(this).apply {
-            this.text = "$who: $text"
-            textSize = 16f
-            setPadding(8, 8, 8, 8)
-        }
-
-        chatLayout.addView(view)
-        return view
     }
 
     override fun onDestroy() {
