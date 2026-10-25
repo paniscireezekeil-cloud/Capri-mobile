@@ -8,12 +8,18 @@ import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 
 class CapriApplication : Application() {
+
     override fun onCreate() {
         super.onCreate()
 
-        FirebaseApp.initializeApp(this)
+        val firebaseApp = FirebaseApp.initializeApp(this)
 
-        FirebaseAppCheck.getInstance()
+        if (firebaseApp == null) {
+            Log.e("CapriAppCheck", "Firebase initialization failed")
+            return
+        }
+
+        FirebaseAppCheck.getInstance(firebaseApp)
             .installAppCheckProviderFactory(
                 DebugAppCheckProviderFactory.getInstance()
             )
