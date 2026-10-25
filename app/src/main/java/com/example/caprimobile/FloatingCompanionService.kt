@@ -221,6 +221,8 @@ class FloatingCompanionService : Service() {
 
         val container = FrameLayout(this).apply {
             background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
+            // Add a slight padding so the image doesn't cover up the yellow border strokes
+            setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
         }
 
         val image = ImageView(this).apply {
@@ -266,7 +268,7 @@ class FloatingCompanionService : Service() {
             private var startY = 0
             private var touchX = 0f
             private var touchY = 0f
-            private var isClick = false
+            private var hasMoved = false
 
             override fun onTouch(v: View, e: MotionEvent): Boolean {
                 when (e.action) {
@@ -276,13 +278,12 @@ class FloatingCompanionService : Service() {
                         startY = charParams.y
                         touchX = e.rawX
                         touchY = e.rawY
+                        hasMoved = false
                         longPressStart = System.currentTimeMillis()
-                        movedDuringTouch = false
-                        isClick = true
 
                         longPressRunnable?.let { handler.removeCallbacks(it) }
                         longPressRunnable = Runnable {
-                            if (!movedDuringTouch && !dismissed) {
+                            if (!hasMoved && !dismissed) {
                                 dismissCompanion()
                             }
                         }
@@ -292,12 +293,11 @@ class FloatingCompanionService : Service() {
                     MotionEvent.ACTION_MOVE -> {
                         val dx = (e.rawX - touchX).toInt()
                         val dy = (e.rawY - touchY).toInt()
-                        if (abs(dx) > 15 || abs(dy) > 15) {
-                            movedDuringTouch = true
-                            isClick = false
+                        if (abs(dx) > 10 || abs(dy) > 10) {
+                            hasMoved = true
                             longPressRunnable?.let { handler.removeCallbacks(it) }
                         }
-                        if (movedDuringTouch) {
+                        if (hasMoved) {
                             charParams.x = (startX + dx).coerceAtLeast(0)
                             charParams.y = (startY + dy).coerceAtLeast(0)
                             safeUpdateViewLayout(container, charParams)
@@ -309,10 +309,12 @@ class FloatingCompanionService : Service() {
                         longPressRunnable?.let { handler.removeCallbacks(it) }
                         val held = System.currentTimeMillis() - longPressStart
 
-                        if (e.action == MotionEvent.ACTION_UP && isClick && held >= LONG_PRESS_DURATION) {
-                            dismissCompanion()
-                        } else if (e.action == MotionEvent.ACTION_UP && isClick && !dismissed) {
-                            toggleChatWindow()
+                        if (e.action == MotionEvent.ACTION_UP && !hasMoved) {
+                            if (held >= LONG_PRESS_DURATION) {
+                                dismissCompanion()
+                            } else if (!dismissed) {
+                                toggleChatWindow()
+                            }
                         }
                         return true
                     }
@@ -335,6 +337,9 @@ class FloatingCompanionService : Service() {
             panel.visibility = View.GONE
             statusTag?.text = "CAPRI // DORMANT"
             stopMouthAnimation()
+
+            chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+            safeUpdateViewLayout(panel, chatParams)
         } else {
             panel.animate().cancel()
             panel.alpha = 1f
@@ -648,8 +653,8 @@ class FloatingCompanionService : Service() {
     private fun glitchDialogue() {
         val panel = chatWindow ?: return
         val id = ++glitchRunId
-        val originalX = chatParams.x
-        val originalY = chatParams.y
+        val originalX = charParams.x
+        val originalY = charParams.y
         val density = resources.displayMetrics.density
 
         val glitchColors = listOf(
@@ -725,7 +730,7 @@ class FloatingCompanionService : Service() {
             setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
         }
 
-        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         safeUpdateViewLayout(panel, chatParams)
 
         input.requestFocus()
@@ -739,7 +744,6 @@ class FloatingCompanionService : Service() {
 
     private fun submitMessage() {
         val input = hiddenInput ?: return
-        val panel = chatWindow ?: return
         val message = input.text.toString().trim()
         if (message.isEmpty() || busy || dismissed) return
 
@@ -769,10 +773,7 @@ class FloatingCompanionService : Service() {
                 busy = false
                 resetIdleTimer()
                 if (!dismissed) {
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.hideSoftInputFromWindow(input.windowToken, 0)
-                    chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    safeUpdateViewLayout(panel, chatParams)
+                    openKeyboard()
                 }
             }
         }
