@@ -213,7 +213,8 @@ class FloatingCompanionService : Service() {
 
     private fun createCharacterContainer() {
         val density = resources.displayMetrics.density
-        val size = (130 * density).toInt()
+        val width = (110 * density).toInt()
+        val height = (160 * density).toInt()
 
         val container = FrameLayout(this).apply {
             background = GradientDrawable().apply {
@@ -251,7 +252,7 @@ class FloatingCompanionService : Service() {
         statusTag = tag
 
         charParams = WindowManager.LayoutParams(
-            size, size,
+            width, height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
@@ -429,8 +430,8 @@ class FloatingCompanionService : Service() {
         val screenH = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
 
-        val charW = (130 * density).toInt()
-        val charH = charW
+        val charW = (110 * density).toInt()
+        val charH = (160 * density).toInt()
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
