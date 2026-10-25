@@ -26,6 +26,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -197,7 +198,7 @@ class FloatingCompanionService : Service() {
                 put("messages", messagesArray)
             }
 
-OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
 
             if (conn.responseCode != 200) return "You still there, choom?"
 
@@ -219,11 +220,7 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
         val height = (110 * density).toInt() // Sideways landscape height
 
         val container = FrameLayout(this).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#110A1F"))
-                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
-                cornerRadius = 4f * density
-            }
+            background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
         }
 
         val image = ImageView(this).apply {
@@ -269,6 +266,7 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
             private var startY = 0
             private var touchX = 0f
             private var touchY = 0f
+            private var isClick = false
 
             override fun onTouch(v: View, e: MotionEvent): Boolean {
                 when (e.action) {
@@ -280,6 +278,7 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
                         touchY = e.rawY
                         longPressStart = System.currentTimeMillis()
                         movedDuringTouch = false
+                        isClick = true
 
                         longPressRunnable?.let { handler.removeCallbacks(it) }
                         longPressRunnable = Runnable {
@@ -293,8 +292,9 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
                     MotionEvent.ACTION_MOVE -> {
                         val dx = (e.rawX - touchX).toInt()
                         val dy = (e.rawY - touchY).toInt()
-                        if (abs(dx) > 8 || abs(dy) > 8) {
+                        if (abs(dx) > 15 || abs(dy) > 15) {
                             movedDuringTouch = true
+                            isClick = false
                             longPressRunnable?.let { handler.removeCallbacks(it) }
                         }
                         if (movedDuringTouch) {
@@ -309,9 +309,9 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
                         longPressRunnable?.let { handler.removeCallbacks(it) }
                         val held = System.currentTimeMillis() - longPressStart
 
-                        if (e.action == MotionEvent.ACTION_UP && !movedDuringTouch && held >= LONG_PRESS_DURATION) {
+                        if (e.action == MotionEvent.ACTION_UP && isClick && held >= LONG_PRESS_DURATION) {
                             dismissCompanion()
-                        } else if (e.action == MotionEvent.ACTION_UP && !movedDuringTouch && !dismissed) {
+                        } else if (e.action == MotionEvent.ACTION_UP && isClick && !dismissed) {
                             toggleChatWindow()
                         }
                         return true
@@ -360,7 +360,6 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
 
     private fun triggerCharacterGlitch() {
         val container = containerView ?: return
-        val density = resources.displayMetrics.density
         val originalX = charParams.x
         val originalY = charParams.y
 
@@ -375,22 +374,22 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
                     charParams.y = (originalY + offset.second).coerceAtLeast(0)
                     safeUpdateViewLayout(container, charParams)
 
-                    val flashColor = if (index % 2 == 0) Color.parseColor("#00FFFF") else Color.parseColor("#FFCC00")
-                    container.background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#110A1F"))
-                        setStroke((2 * density).toInt(), flashColor)
-                        cornerRadius = 4f * density
+                    val flashDrawable = if (index % 2 == 0) {
+                        GradientDrawable().apply {
+                            setColor(Color.parseColor("#110A1F"))
+                            setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#00FFFF"))
+                            cornerRadius = 4f * resources.displayMetrics.density
+                        }
+                    } else {
+                        ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
                     }
+                    container.background = flashDrawable
 
                     if (index == glitchOffsets.lastIndex) {
                         charParams.x = originalX
                         charParams.y = originalY
                         safeUpdateViewLayout(container, charParams)
-                        container.background = GradientDrawable().apply {
-                            setColor(Color.parseColor("#110A1F"))
-                            setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
-                            cornerRadius = 4f * density
-                        }
+                        container.background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
                     }
                 }
             }, index * 50L)
