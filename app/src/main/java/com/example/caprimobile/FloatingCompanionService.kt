@@ -39,6 +39,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
+import kotlin.random.Random
 
 class FloatingCompanionService : Service() {
 
@@ -57,6 +58,7 @@ class FloatingCompanionService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
 
+    private var containerView: FrameLayout? = null
     private var character: ImageView? = null
     private var statusTag: TextView? = null
     private var chatWindow: LinearLayout? = null
@@ -76,6 +78,7 @@ class FloatingCompanionService : Service() {
     private var typingRunnable: Runnable? = null
     private var longPressRunnable: Runnable? = null
     private var idleRunnable: Runnable? = null
+    private var randomGlitchRunnable: Runnable? = null
 
     private var glitchRunId = 0
     private var dialogueGeneration = 0
@@ -122,6 +125,7 @@ class FloatingCompanionService : Service() {
         history.add("assistant" to greeting)
         showDialogue("TALKING", "> you: Hello Capri.", greeting)
         resetIdleTimer()
+        scheduleRandomGlitch()
     }
 
     private fun requestReply(): String {
@@ -215,17 +219,17 @@ class FloatingCompanionService : Service() {
         val height = (110 * density).toInt() // Sideways landscape height
 
         val container = FrameLayout(this).apply {
-            // Tactical Yellow Tech Border matching the reference screenshot
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#110A1F"))
-                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00")) // Yellow border
-                cornerRadius = 4f * density
-            }
+            setBackgroundColor(Color.TRANSPARENT)
         }
 
         val image = ImageView(this).apply {
             setImageResource(R.drawable.capri_closed)
             scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#110A1F"))
+                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
+                cornerRadius = 4f * density
+            }
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -236,7 +240,7 @@ class FloatingCompanionService : Service() {
         val tag = TextView(this).apply {
             text = "CAPRI // DORMANT"
             textSize = 9f
-            setTextColor(Color.parseColor("#FFCC00")) // Yellow status text
+            setTextColor(Color.parseColor("#FFCC00"))
             setBackgroundColor(Color.parseColor("#0A0E17"))
             setPadding((4 * density).toInt(), (2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt())
             layoutParams = FrameLayout.LayoutParams(
@@ -318,8 +322,63 @@ class FloatingCompanionService : Service() {
             }
         })
 
+        containerView = container
         character = image
         wm.addView(container, charParams)
+    }
+
+    private fun scheduleRandomGlitch() {
+        randomGlitchRunnable?.let { handler.removeCallbacks(it) }
+        if (dismissed) return
+
+        val delay = Random.nextLong(10000L, 22000L) // Glitch every 10 to 22 seconds randomly
+        randomGlitchRunnable = Runnable {
+            if (!dismissed) {
+                triggerCharacterGlitch()
+                scheduleRandomGlitch()
+            }
+        }
+        handler.postDelayed(randomGlitchRunnable!!, delay)
+    }
+
+    private fun triggerCharacterGlitch() {
+        val img = character ?: return
+        val density = resources.displayMetrics.density
+        val originalX = charParams.x
+        val originalY = charParams.y
+
+        val glitchOffsets = listOf(
+            Pair(10, -4), Pair(-12, 6), Pair(6, 8), Pair(-8, -6), Pair(0, 0)
+        )
+
+        glitchOffsets.forEachIndexed { index, offset ->
+            handler.postDelayed({
+                if (dismissed || character == null) return@postDisconnected
+                
+                charParams.x = (originalX + offset.first).coerceAtLeast(0)
+                charParams.y = (originalY + offset.second).coerceAtLeast(0)
+                containerView?.let { safeUpdateViewLayout(it, charParams) }
+
+                // Quick color flash on her border during glitch
+                val flashColor = if (index % 2 == 0) Color.parseColor("#00FFFF") else Color.parseColor("#FFCC00")
+                img.background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#110A1F"))
+                    setStroke((2 * density).toInt(), flashColor)
+                    cornerRadius = 4f * density
+                }
+
+                if (index == glitchOffsets.lastIndex) {
+                    charParams.x = originalX
+                    charParams.y = originalY
+                    containerView?.let { safeUpdateViewLayout(it, charParams) }
+                    img.background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#110A1F"))
+                        setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
+                        cornerRadius = 4f * density
+                    }
+                }
+            }, index * 50L)
+        }
     }
 
     private fun createChatWindow() {
@@ -334,11 +393,10 @@ class FloatingCompanionService : Service() {
                 (10 * density).toInt(),
                 (8 * density).toInt()
             )
-            // Tactical Yellow Tech Border for the chat window matching the screenshot
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E60D111A")) // Dark immersive terminal background
+                setColor(Color.parseColor("#E60D111A"))
                 cornerRadius = 4 * density
-                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00")) // Sharp yellow border
+                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
             }
             elevation = 4f * density
         }
@@ -346,7 +404,7 @@ class FloatingCompanionService : Service() {
         val userQuery = TextView(this).apply {
             text = ""
             textSize = 10f
-            setTextColor(Color.parseColor("#AA8844")) // Muted gold for user prompt
+            setTextColor(Color.parseColor("#AA8844"))
             setPadding(2, 0, 2, 2)
         }
 
@@ -354,7 +412,7 @@ class FloatingCompanionService : Service() {
             text = ""
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#FFCC00")) // Crisp yellow text matching the border style
+            setTextColor(Color.parseColor("#FFCC00"))
             setPadding(2, 2, 2, 6)
             setOnClickListener { openKeyboard() }
         }
@@ -389,7 +447,7 @@ class FloatingCompanionService : Service() {
             textSize = 11f
             letterSpacing = 0.12f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#FFCC00")) // Yellow SEND button
+            setTextColor(Color.parseColor("#FFCC00"))
             setPadding(4, 2, 2, 2)
             setOnClickListener { submitMessage() }
         }
@@ -722,12 +780,14 @@ class FloatingCompanionService : Service() {
         fadeRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable?.let { handler.removeCallbacks(it) }
         idleRunnable?.let { handler.removeCallbacks(it) }
+        randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
-        try { character?.parent?.let { wm.removeView(it as View) } } catch (_: Exception) {}
+        try { containerView?.let { wm.removeView(it) } } catch (_: Exception) {}
         try { chatWindow?.let { wm.removeView(it) } } catch (_: Exception) {}
 
+        containerView = null
         character = null
         statusTag = null
         dialogueBubble = null
@@ -779,12 +839,14 @@ class FloatingCompanionService : Service() {
         fadeRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable?.let { handler.removeCallbacks(it) }
         idleRunnable?.let { handler.removeCallbacks(it) }
+        randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
-        try { character?.parent?.let { wm.removeView(it as View) } } catch (_: Exception) {}
+        try { containerView?.let { wm.removeView(it) } } catch (_: Exception) {}
         try { chatWindow?.let { wm.removeView(it) } } catch (_: Exception) {}
 
+        containerView = null
         character = null
         statusTag = null
         dialogueBubble = null
