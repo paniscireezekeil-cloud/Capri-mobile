@@ -219,17 +219,17 @@ class FloatingCompanionService : Service() {
         val height = (110 * density).toInt() // Sideways landscape height
 
         val container = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-        }
-
-        val image = ImageView(this).apply {
-            setImageResource(R.drawable.capri_closed)
-            scaleType = ImageView.ScaleType.CENTER_CROP
+            // Tactical Yellow Tech Border applied to the container background
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#110A1F"))
                 setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
                 cornerRadius = 4f * density
             }
+        }
+
+        val image = ImageView(this).apply {
+            setImageResource(R.drawable.capri_closed)
+            scaleType = ImageView.ScaleType.CENTER_CROP
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -313,7 +313,7 @@ class FloatingCompanionService : Service() {
                         if (e.action == MotionEvent.ACTION_UP && !movedDuringTouch && held >= LONG_PRESS_DURATION) {
                             dismissCompanion()
                         } else if (e.action == MotionEvent.ACTION_UP && !movedDuringTouch && !dismissed) {
-                            openKeyboard()
+                            toggleChatWindow()
                         }
                         return true
                     }
@@ -325,6 +325,24 @@ class FloatingCompanionService : Service() {
         containerView = container
         character = image
         wm.addView(container, charParams)
+    }
+
+    private fun toggleChatWindow() {
+        val panel = chatWindow ?: return
+        if (panel.visibility == View.VISIBLE) {
+            fadeRunnable?.let { handler.removeCallbacks(it) }
+            typingRunnable?.let { handler.removeCallbacks(it) }
+            panel.alpha = 0f
+            panel.visibility = View.GONE
+            statusTag?.text = "CAPRI // DORMANT"
+            stopMouthAnimation()
+        } else {
+            panel.animate().cancel()
+            panel.alpha = 1f
+            panel.visibility = View.VISIBLE
+            repositionChat()
+            openKeyboard()
+        }
     }
 
     private fun scheduleRandomGlitch() {
@@ -342,7 +360,7 @@ class FloatingCompanionService : Service() {
     }
 
     private fun triggerCharacterGlitch() {
-        val img = character ?: return
+        val container = containerView ?: return
         val density = resources.displayMetrics.density
         val originalX = charParams.x
         val originalY = charParams.y
@@ -353,13 +371,13 @@ class FloatingCompanionService : Service() {
 
         glitchOffsets.forEachIndexed { index, offset ->
             handler.postDelayed({
-                if (!dismissed && character != null) {
+                if (!dismissed && containerView != null) {
                     charParams.x = (originalX + offset.first).coerceAtLeast(0)
                     charParams.y = (originalY + offset.second).coerceAtLeast(0)
-                    containerView?.let { safeUpdateViewLayout(it, charParams) }
+                    container.let { safeUpdateViewLayout(it, charParams) }
 
                     val flashColor = if (index % 2 == 0) Color.parseColor("#00FFFF") else Color.parseColor("#FFCC00")
-                    img.background = GradientDrawable().apply {
+                    container.background = GradientDrawable().apply {
                         setColor(Color.parseColor("#110A1F"))
                         setStroke((2 * density).toInt(), flashColor)
                         cornerRadius = 4f * density
@@ -368,8 +386,8 @@ class FloatingCompanionService : Service() {
                     if (index == glitchOffsets.lastIndex) {
                         charParams.x = originalX
                         charParams.y = originalY
-                        containerView?.let { safeUpdateViewLayout(it, charParams) }
-                        img.background = GradientDrawable().apply {
+                        container.let { safeUpdateViewLayout(it, charParams) }
+                        container.background = GradientDrawable().apply {
                             setColor(Color.parseColor("#110A1F"))
                             setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
                             cornerRadius = 4f * density
@@ -709,7 +727,7 @@ class FloatingCompanionService : Service() {
             setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
         }
 
-        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         safeUpdateViewLayout(panel, chatParams)
 
         input.requestFocus()
