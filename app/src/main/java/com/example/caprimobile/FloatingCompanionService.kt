@@ -331,7 +331,7 @@ class FloatingCompanionService : Service() {
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
-        val delay = Random.nextLong(10000L, 22000L) // Glitch every 10 to 22 seconds randomly
+        val delay = Random.nextLong(10000L, 22000L)
         randomGlitchRunnable = Runnable {
             if (!dismissed) {
                 triggerCharacterGlitch()
@@ -353,28 +353,27 @@ class FloatingCompanionService : Service() {
 
         glitchOffsets.forEachIndexed { index, offset ->
             handler.postDelayed({
-                if (dismissed || character == null) return@postDisconnected
-                
-                charParams.x = (originalX + offset.first).coerceAtLeast(0)
-                charParams.y = (originalY + offset.second).coerceAtLeast(0)
-                containerView?.let { safeUpdateViewLayout(it, charParams) }
-
-                // Quick color flash on her border during glitch
-                val flashColor = if (index % 2 == 0) Color.parseColor("#00FFFF") else Color.parseColor("#FFCC00")
-                img.background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#110A1F"))
-                    setStroke((2 * density).toInt(), flashColor)
-                    cornerRadius = 4f * density
-                }
-
-                if (index == glitchOffsets.lastIndex) {
-                    charParams.x = originalX
-                    charParams.y = originalY
+                if (!dismissed && character != null) {
+                    charParams.x = (originalX + offset.first).coerceAtLeast(0)
+                    charParams.y = (originalY + offset.second).coerceAtLeast(0)
                     containerView?.let { safeUpdateViewLayout(it, charParams) }
+
+                    val flashColor = if (index % 2 == 0) Color.parseColor("#00FFFF") else Color.parseColor("#FFCC00")
                     img.background = GradientDrawable().apply {
                         setColor(Color.parseColor("#110A1F"))
-                        setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
+                        setStroke((2 * density).toInt(), flashColor)
                         cornerRadius = 4f * density
+                    }
+
+                    if (index == glitchOffsets.lastIndex) {
+                        charParams.x = originalX
+                        charParams.y = originalY
+                        containerView?.let { safeUpdateViewLayout(it, charParams) }
+                        img.background = GradientDrawable().apply {
+                            setColor(Color.parseColor("#110A1F"))
+                            setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
+                            cornerRadius = 4f * density
+                        }
                     }
                 }
             }, index * 50L)
@@ -657,29 +656,29 @@ class FloatingCompanionService : Service() {
 
         steps.forEachIndexed { index, step ->
             handler.postDelayed({
-                if (chatWindow !== panel || id != glitchRunId || dismissed) return@postDelayed
+                if (chatWindow === panel && id == glitchRunId && !dismissed) {
+                    panel.alpha = step.first
+                    chatParams.x = (originalX + step.second).coerceAtLeast(0)
+                    chatParams.y = (originalY + step.third).coerceAtLeast(0)
 
-                panel.alpha = step.first
-                chatParams.x = (originalX + step.second).coerceAtLeast(0)
-                chatParams.y = (originalY + step.third).coerceAtLeast(0)
+                    val color = glitchColors[index % glitchColors.size]
+                    panel.background = GradientDrawable().apply {
+                        setColor(Color.argb(90, Color.red(color), Color.green(color), Color.blue(color)))
+                        cornerRadius = 2 * density
+                        setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
+                    }
 
-                val color = glitchColors[index % glitchColors.size]
-                panel.background = GradientDrawable().apply {
-                    setColor(Color.argb(90, Color.red(color), Color.green(color), Color.blue(color)))
-                    cornerRadius = 2 * density
-                    setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
-                }
-
-                safeUpdateViewLayout(panel, chatParams)
-
-                if (index == steps.lastIndex) {
-                    panel.alpha = 0f
-                    panel.visibility = View.GONE
-                    chatParams.x = originalX
-                    chatParams.y = originalY
                     safeUpdateViewLayout(panel, chatParams)
-                    statusTag?.text = "CAPRI // DORMANT"
-                    stopMouthAnimation()
+
+                    if (index == steps.lastIndex) {
+                        panel.alpha = 0f
+                        panel.visibility = View.GONE
+                        chatParams.x = originalX
+                        chatParams.y = originalY
+                        safeUpdateViewLayout(panel, chatParams)
+                        statusTag?.text = "CAPRI // DORMANT"
+                        stopMouthAnimation()
+                    }
                 }
             }, index * GLITCH_STEP_DELAY)
         }
@@ -715,9 +714,10 @@ class FloatingCompanionService : Service() {
 
         input.requestFocus()
         input.post {
-            if (dismissed) return@post
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            if (!dismissed) {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            }
         }
     }
 
