@@ -402,7 +402,7 @@ class FloatingCompanionService : Service() {
 
     private fun createChatWindow() {
         val density = resources.displayMetrics.density
-        val width = (250 * density).toInt()
+        val width = (260 * density).toInt()
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -420,7 +420,6 @@ class FloatingCompanionService : Service() {
             elevation = 4f * density
         }
 
-        // Explicit layout parameters ensuring proper width/height wrapping for text views
         val textParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
@@ -440,6 +439,7 @@ class FloatingCompanionService : Service() {
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
+            includeFontPadding = false
             layoutParams = textParams
         }
 
@@ -536,7 +536,7 @@ class FloatingCompanionService : Service() {
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
-        val panelW = panel.width.takeIf { it > 0 } ?: (250 * density).toInt()
+        val panelW = panel.width.takeIf { it > 0 } ?: (260 * density).toInt()
         val panelH = panel.height.takeIf { it > 0 } ?: (110 * density).toInt()
 
         val placeRight = centerX < screenW / 2
@@ -607,6 +607,7 @@ class FloatingCompanionService : Service() {
     private fun showDialogue(state: String, userMsg: String?, botMsg: String?) {
         val dialogueView = dialogueBubble ?: return
         val queryView = userQueryText ?: return
+        val panel = chatWindow ?: return
         if (dismissed) return
 
         typingRunnable?.let { handler.removeCallbacks(it) }
@@ -620,8 +621,8 @@ class FloatingCompanionService : Service() {
         glitchRunId++
 
         statusTag?.text = "CAPRI // $state"
-        chatWindow?.alpha = 1f
-        chatWindow?.visibility = View.VISIBLE
+        panel.alpha = 1f
+        panel.visibility = View.VISIBLE
 
         if (userMsg != null) {
             queryView.text = userMsg
@@ -632,6 +633,7 @@ class FloatingCompanionService : Service() {
 
         val targetText = botMsg ?: ""
         dialogueView.text = ""
+        dialogueView.requestLayout()
         repositionChat()
 
         var index = 0
@@ -643,6 +645,8 @@ class FloatingCompanionService : Service() {
                 if (index < targetText.length) {
                     val currentChar = targetText[index]
                     dialogueView.append(currentChar.toString())
+                    dialogueView.invalidate()
+
                     index++
 
                     if (!currentChar.isWhitespace()) {
@@ -676,8 +680,8 @@ class FloatingCompanionService : Service() {
     private fun glitchDialogue() {
         val panel = chatWindow ?: return
         val id = ++glitchRunId
-        val originalX = charParams.x
-        val originalY = charParams.y
+        val originalX = chatParams.x
+        val originalY = chatParams.y
         val density = resources.displayMetrics.density
 
         val glitchColors = listOf(
