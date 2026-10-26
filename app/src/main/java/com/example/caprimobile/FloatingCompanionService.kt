@@ -875,20 +875,6 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private fun handleDeviceAction(message: String) {
-        val lower = message.lowercase().trim()
-        when {
-            lower.startsWith("call ") -> {
-                val query = message.substring(5).trim()
-                openDialer(query)
-            }
-            lower.startsWith("play ") -> {
-                val query = message.substring(5).trim()
-                playSpotify(query)
-            }
-        }
-    }
-
     private fun openDialer(contactOrNumber: String) {
         try {
             val uri = Uri.parse("tel:$contactOrNumber")
@@ -927,9 +913,20 @@ class FloatingCompanionService : Service() {
         input.text.clear()
 
         val lower = message.lowercase()
-        if (lower.startsWith("call ") || lower.startsWith("play ")) {
+        if (lower.contains("play") || lower.contains("spotify")) {
             history.add("user" to message)
-            handleDeviceAction(message)
+            val query = if (lower.contains("play")) {
+                lower.substringAfter("play").trim()
+            } else {
+                "cyberpunk"
+            }
+            playSpotify(if (query.isNotEmpty()) query else "cyberpunk")
+            return
+        }
+        if (lower.contains("call")) {
+            history.add("user" to message)
+            val query = lower.substringAfter("call").trim()
+            openDialer(query)
             return
         }
 
