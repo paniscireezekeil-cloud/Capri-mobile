@@ -1,4 +1,4 @@
-package com.capri.mobile.service
+package com.example.caprimobile.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -26,7 +26,7 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
-import com.capri.mobile.R
+import com.example.caprimobile.R
 import com.spotify.android.appremote.api.ConnectionParams
 import com.spotify.android.appremote.api.Connector
 import com.spotify.android.appremote.api.SpotifyAppRemote
@@ -103,7 +103,7 @@ class FloatingCompanionService : Service() {
     }
 
     private fun buildForegroundNotification(): Notification {
-        val notificationIntent = Intent(this, com.capri.mobile.MainActivity::class.java)
+        val notificationIntent = Intent(this, com.example.caprimobile.MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -133,10 +133,8 @@ class FloatingCompanionService : Service() {
         var initialTouchY = 0f
         var lastTapTime = 0L
 
-        // Handler for long-press dismissal
         val longPressHandler = Handler(Looper.getMainLooper())
         val longPressRunnable = Runnable {
-            // Long-press triggered -> Dismiss service entirely
             stopSelf()
         }
 
@@ -147,11 +145,10 @@ class FloatingCompanionService : Service() {
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
-                    longPressHandler.postDelayed(longPressRunnable, 1200) // 1.2s hold to dismiss
+                    longPressHandler.postDelayed(longPressRunnable, 1200)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    // If user drags past threshold, cancel the long-press dismissal
                     if (Math.abs(event.rawX - initialTouchX) > 20 || Math.abs(event.rawY - initialTouchY) > 20) {
                         longPressHandler.removeCallbacks(longPressRunnable)
                     }
