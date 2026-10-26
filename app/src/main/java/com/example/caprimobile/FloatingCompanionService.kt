@@ -212,17 +212,14 @@ class FloatingCompanionService : Service() {
 
             canvas.save()
             canvas.translate(cx, cy)
-            canvas.rotate(rotationAngle) // Continuous full rotation
+            canvas.rotate(rotationAngle)
 
-            // Dynamic random/pulsing scale factor for the red and green spikes
             val spikeScale = 1.0f + 0.25f * sin(pulsePhase).toFloat()
 
-            // Draw multi-pointed starburst spikes with independent random/pulsing offsets
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
-                // Make alternating spikes pulse slightly out of sync for a chaotic, organic feel
                 val individualScale = spikeScale * (if (i % 2 == 0) 1f + 0.1f * sin(pulsePhase * 1.5).toFloat() else 1f)
                 canvas.scale(individualScale, individualScale)
 
@@ -239,7 +236,6 @@ class FloatingCompanionService : Service() {
                 canvas.restore()
             }
 
-            // Central Diamond Base (Purple)
             val diamondPath = Path().apply {
                 moveTo(0f, -radius * 0.8f)
                 lineTo(radius * 0.8f, 0f)
@@ -250,7 +246,6 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(diamondPath, purplePaint)
             canvas.drawPath(diamondPath, darkBorderPaint)
 
-            // Central Eye Frame (Cyan Diamond)
             val eyeBox = radius * 0.55f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
@@ -262,7 +257,6 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(eyePath, eyeFillPaint)
             canvas.drawPath(eyePath, eyeOuterPaint)
 
-            // Eye Pupil & Core
             canvas.drawCircle(0f, 0f, radius * 0.22f, eyePupilPaint)
             canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
 
@@ -287,7 +281,7 @@ class FloatingCompanionService : Service() {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
                     starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 2.5f) % 360f
-                    starburstDrawable.pulsePhase += 0.12f // Controls spike enlarging/pulsing speed
+                    starburstDrawable.pulsePhase += 0.12f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
                     handler.postDelayed(this, 30L)
@@ -455,10 +449,8 @@ class FloatingCompanionService : Service() {
     private fun updateContainerVisuals() {
         val container = containerView ?: return
         val img = character ?: return
-        val density = resources.displayMetrics.density
 
         if (isAlternateForm) {
-            // Overdrive Form: ZERO box/border background, transparent container, only floating animated starburst
             container.background = null
             img.setImageDrawable(starburstDrawable)
             startStarburstAnimation()
@@ -466,7 +458,6 @@ class FloatingCompanionService : Service() {
             statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
             statusTag?.text = "CAPRI // OVERDRIVE"
         } else {
-            // Standard Dormant Form: Restores original bordered container and character art
             stopStarburstAnimation()
             container.background = ContextCompat.getDrawable(this, R.drawable.cyberpunk_border)
             img.setImageResource(R.drawable.capri_closed)
@@ -686,7 +677,7 @@ class FloatingCompanionService : Service() {
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
-        val delay = Random.nextLong(6000L, 12000L)
+        val delay = Random.nextLong(IDLE_TRIGGER_MIN, IDLE_TRIGGER_MAX)
         randomGlitchRunnable = Runnable {
             if (!dismissed) {
                 triggerCharacterGlitch()
@@ -1229,7 +1220,7 @@ class FloatingCompanionService : Service() {
         scope.launch {
             try {
                 val reply = withContext(Dispatchers.IO) { requestReply() }
-                if (dismissed) return$dismissed
+                if (dismissed) return@launch
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
             } catch (e: CancellationException) {
