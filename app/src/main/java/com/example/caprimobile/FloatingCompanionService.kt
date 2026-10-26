@@ -267,7 +267,7 @@ class FloatingCompanionService : Service() {
         val container = FrameLayout(this).apply {
             background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
             setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
-            alpha = 0f // Start transparent for glitch-in entrance
+            alpha = 0f
         }
 
         val image = ImageView(this).apply {
@@ -346,6 +346,7 @@ class FloatingCompanionService : Service() {
                             charParams.x = (startX + dx).coerceAtLeast(0)
                             charParams.y = (startY + dy).coerceAtLeast(0)
                             safeUpdateViewLayout(container, charParams)
+                            // Smooth live repositioning during drag
                             repositionChat()
                         }
                         return true
@@ -371,8 +372,6 @@ class FloatingCompanionService : Service() {
         containerView = container
         character = image
         wm.addView(container, charParams)
-
-        // Trigger glitch-in appearance animation immediately upon spawn
         glitchInAnimation()
     }
 
@@ -397,12 +396,14 @@ class FloatingCompanionService : Service() {
                     charParams.x = (originalX + step.second).coerceAtLeast(0)
                     charParams.y = (originalY + step.third).coerceAtLeast(0)
                     safeUpdateViewLayout(container, charParams)
+                    repositionChat()
 
                     if (index == glitchSteps.lastIndex) {
                         container.alpha = 1.0f
                         charParams.x = originalX
                         charParams.y = originalY
                         safeUpdateViewLayout(container, charParams)
+                        repositionChat()
                     }
                 }
             }, index * 45L)
@@ -414,6 +415,7 @@ class FloatingCompanionService : Service() {
         if (panel.visibility == View.VISIBLE) {
             fadeRunnable?.let { handler.removeCallbacks(it) }
             typingRunnable?.let { handler.removeCallbacks(it) }
+            panel.animate().cancel()
             panel.alpha = 0f
             panel.visibility = View.GONE
             statusTag?.text = "CAPRI // DORMANT"
@@ -459,6 +461,7 @@ class FloatingCompanionService : Service() {
                     charParams.x = (originalX + offset.first).coerceAtLeast(0)
                     charParams.y = (originalY + offset.second).coerceAtLeast(0)
                     safeUpdateViewLayout(container, charParams)
+                    repositionChat()
 
                     val flashDrawable = if (index % 2 == 0) {
                         GradientDrawable().apply {
@@ -476,6 +479,7 @@ class FloatingCompanionService : Service() {
                         charParams.y = originalY
                         safeUpdateViewLayout(container, charParams)
                         container.background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
+                        repositionChat()
                     }
                 }
             }, index * 40L)
@@ -640,10 +644,14 @@ class FloatingCompanionService : Service() {
         val placeBelow = centerY < screenH / 2
         val gap = (6 * density).toInt()
 
-        chatParams.x = (if (placeRight) charParams.x + charW + gap else charParams.x - panelW - gap)
+        val targetX = (if (placeRight) charParams.x + charW + gap else charParams.x - panelW - gap)
             .coerceIn(0, (screenW - panelW - 20).coerceAtLeast(0))
-        chatParams.y = (if (placeBelow) charParams.y + charH else charParams.y - panelH)
+        val targetY = (if (placeBelow) charParams.y + charH else charParams.y - panelH)
             .coerceIn(0, (screenH - panelH - 20).coerceAtLeast(0))
+
+        // Smooth translation interpolation instead of sudden jumps
+        chatParams.x += ((targetX - chatParams.x) * 0.4f).toInt()
+        chatParams.y += ((targetY - chatParams.y) * 0.4f).toInt()
 
         safeUpdateViewLayout(panel, chatParams)
     }
@@ -833,6 +841,7 @@ class FloatingCompanionService : Service() {
                     }
 
                     safeUpdateViewLayout(panel, charParams)
+                    repositionChat()
 
                     if (index == steps.lastIndex) {
                         panel.alpha = 0f
@@ -842,6 +851,7 @@ class FloatingCompanionService : Service() {
                         safeUpdateViewLayout(panel, charParams)
                         statusTag?.text = "CAPRI // DORMANT"
                         stopMouthAnimation()
+                        repositionChat()
                     }
                 }
             }, index * GLITCH_STEP_DELAY)
