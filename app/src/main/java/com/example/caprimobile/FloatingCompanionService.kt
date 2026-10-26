@@ -57,7 +57,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
 import kotlin.math.sin
-import kotlin.random.Random
 
 class FloatingCompanionService : Service() {
 
@@ -108,7 +107,6 @@ class FloatingCompanionService : Service() {
     private var dialogueGeneration = 0
     private val history = mutableListOf<Pair<String, String>>()
 
-    // Form & Tap tracking variables
     private var isAlternateForm = false
     private var lastTapTime = 0L
 
@@ -118,13 +116,7 @@ class FloatingCompanionService : Service() {
 
     private val personality = """
         You are Capri, a loyal digital companion and close friend to D. 
-        YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. You have a cyberpunk attitude and a distinct voice. You tease D and call out his questionable decisions, but it's always familiar, warm, and playful—never genuinely cruel. You act like a real friend hanging out with him, not an assistant or an interrogator.
-        RULES FOR CONVERSATION:
-        - NEVER repeatedly ask "what's the situation" or sound like a dispatcher. You already know D. Talk about whatever is happening, make witty observations, or just chill.
-        - APP AWARENESS: You know what app D is currently using on his phone (provided in context). If he opens an app, make a quick, sarcastic, or playful jab about it if it fits the moment.
-        - ONLY talk about music or give hot takes on songs IF D is actively listening to Spotify (provided below). If nothing is playing on Spotify, do NOT bring up music out of nowhere.
-        - Keep replies short, natural, and expressive (1-3 sentences max). Use dry humor and occasional teasing.
-        - Address him as D naturally, but don't force it into every line.
+        YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. You have a cyberpunk attitude and a distinct voice.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -163,7 +155,7 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    // --- Procedural Animated Cyberpunk Starburst Drawable (No Box, Rotating + Spikes Pulsing) ---
+    // --- Exact Procedural Cyberpunk Starburst Animated Vector ---
     class CyberpunkStarburstDrawable : Drawable() {
         var rotationAngle = 0f
         var pulsePhase = 0f
@@ -208,26 +200,26 @@ class FloatingCompanionService : Service() {
             val h = bounds.height().toFloat()
             val cx = w / 2f
             val cy = h / 2f
-            val radius = w.coerceAtMost(h) * 0.42f
+            val radius = w.coerceAtMost(h) * 0.38f
 
             canvas.save()
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            val spikeScale = 1.0f + 0.25f * sin(pulsePhase).toFloat()
+            // Red & Green Spikes expanding and contracting along radius
+            val spikeExtension = 1.0f + 0.35f * abs(sin(pulsePhase.toDouble())).toFloat()
 
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
-                val individualScale = spikeScale * (if (i % 2 == 0) 1f + 0.1f * sin(pulsePhase * 1.5).toFloat() else 1f)
-                canvas.scale(individualScale, individualScale)
-
+                val currentSpikeScale = if (i % 2 == 0) spikeExtension else 1.0f + 0.25f * abs(sin((pulsePhase + 1.2f).toDouble())).toFloat()
+                
                 val path = Path().apply {
-                    moveTo(0f, -radius * 1.3f)
-                    lineTo(radius * 0.3f, 0f)
-                    lineTo(0f, radius * 0.4f)
-                    lineTo(-radius * 0.3f, 0f)
+                    moveTo(0f, -radius * 1.4f * currentSpikeScale)
+                    lineTo(radius * 0.28f, 0f)
+                    lineTo(0f, radius * 0.35f)
+                    lineTo(-radius * 0.28f, 0f)
                     close()
                 }
                 val paint = if (i % 2 == 0) redPaint else greenPaint
@@ -236,17 +228,19 @@ class FloatingCompanionService : Service() {
                 canvas.restore()
             }
 
+            // Central Purple Diamond Base
             val diamondPath = Path().apply {
-                moveTo(0f, -radius * 0.8f)
-                lineTo(radius * 0.8f, 0f)
-                lineTo(0f, radius * 0.8f)
-                lineTo(-radius * 0.8f, 0f)
+                moveTo(0f, -radius * 0.75f)
+                lineTo(radius * 0.75f, 0f)
+                lineTo(0f, radius * 0.75f)
+                lineTo(-radius * 0.75f, 0f)
                 close()
             }
             canvas.drawPath(diamondPath, purplePaint)
             canvas.drawPath(diamondPath, darkBorderPaint)
 
-            val eyeBox = radius * 0.55f
+            // Cyan Diamond Eye Frame
+            val eyeBox = radius * 0.5f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
                 lineTo(eyeBox, 0f)
@@ -257,6 +251,7 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(eyePath, eyeFillPaint)
             canvas.drawPath(eyePath, eyeOuterPaint)
 
+            // Blue Pupil & White Center Glint
             canvas.drawCircle(0f, 0f, radius * 0.22f, eyePupilPaint)
             canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
 
@@ -280,8 +275,8 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 2.5f) % 360f
-                    starburstDrawable.pulsePhase += 0.12f
+                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 2.0f) % 360f
+                    starburstDrawable.pulsePhase += 0.08f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
                     handler.postDelayed(this, 30L)
@@ -296,166 +291,21 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = null
     }
 
-    private fun connectSpotify() {
-        try {
-            val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
-                .setRedirectUri(SPOTIFY_REDIRECT_URI)
-                .showAuthView(true)
-                .build()
-
-            SpotifyAppRemote.connect(applicationContext, connectionParams, object : Connector.ConnectionListener {
-                override fun onConnected(appRemote: SpotifyAppRemote) {
-                    spotifyAppRemote = appRemote
-                    Log.d("FloatingService", "Connected to Spotify App Remote successfully!")
-                }
-
-                override fun onFailure(throwable: Throwable) {
-                    Log.e("FloatingService", "Spotify connection failed: ${throwable.message}")
-                }
-            })
-        } catch (e: Exception) {
-            Log.e("FloatingService", "Spotify init exception: ${e.message}")
-        }
-    }
-
-    private fun startAppMonitoring() {
-        scope.launch(Dispatchers.IO) {
-            while (isActive && !dismissed) {
-                val detectedApp = getForegroundApp()
-                if (detectedApp != "unknown" && detectedApp != currentForegroundApp) {
-                    currentForegroundApp = detectedApp
-                }
-                delay(3000L)
-            }
-        }
-    }
-
-    private fun getForegroundApp(): String {
-        try {
-            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "unknown"
-            val time = System.currentTimeMillis()
-            val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 10000, time)
-            if (stats.isNullOrEmpty()) {
-                return "unknown"
-            }
-            val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
-            val currentApp = sortedStats.firstOrNull()?.packageName ?: "unknown"
-            
-            return when {
-                currentApp.contains("instagram") -> "Instagram"
-                currentApp.contains("spotify") -> "Spotify"
-                currentApp.contains("youtube") -> "YouTube"
-                currentApp.contains("discord") -> "Discord"
-                currentApp.contains("twitter") || currentApp.contains("x.android") -> "X (Twitter)"
-                currentApp.contains("facebook") -> "Facebook"
-                currentApp.contains("tiktok") -> "TikTok"
-                currentApp.contains("reddit") -> "Reddit"
-                else -> currentApp.substringAfterLast('.')
-            }
-        } catch (_: Exception) {
-            return "unknown"
-        }
-    }
-
-    private fun requestReply(): String {
-        val url = URL("https://openrouter.ai/api/v1/chat/completions")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer ${getApiKey()}")
-            setRequestProperty("HTTP-Referer", "https://github.com/CapriMobile")
-            setRequestProperty("X-Title", "Capri Mobile")
-            doOutput = true
-            connectTimeout = 15000
-            readTimeout = 15000
-        }
-
-        val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-        val musicContext = if (songStatus != "Nothing playing") "D'S CURRENTLY PLAYING SPOTIFY TRACK: $songStatus." else "NO MUSIC IS PLAYING ON SPOTIFY RIGHT NOW."
-        val appContext = "D'S CURRENTLY ACTIVE APP ON SCREEN: $currentForegroundApp."
-        val dynamicPersonality = "$personality\n$appContext\n$musicContext"
-
-        val jsonBody = JSONObject().apply {
-            put("model", "openrouter/free")
-            val messagesArray = JSONArray()
-            messagesArray.put(JSONObject().put("role", "system").put("content", dynamicPersonality))
-            synchronized(history) {
-                history.takeLast(10).forEach { (role, content) ->
-                    messagesArray.put(JSONObject().put("role", role).put("content", content))
-                }
-            }
-            put("messages", messagesArray)
-        }
-
-        OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-
-        if (conn.responseCode != 200) {
-            val errorBody = try { conn.errorStream?.bufferedReader()?.use { it.readText() } } catch (_: Exception) { "No error body" }
-            Log.e("OpenRouter", "Error code ${conn.responseCode}: $errorBody")
-            return "Net glitch (${conn.responseCode}), choom. Give me a second."
-        }
-
-        val responseString = conn.inputStream.bufferedReader().use { it.readText() }
-        val jsonResponse = JSONObject(responseString)
-        return jsonResponse.getJSONArray("choices")
-            .getJSONObject(0)
-            .getJSONObject("message")
-            .getString("content")
-            .trim()
-    }
-
-    private fun requestProactiveReply(instruction: String): String {
-        return try {
-            val url = URL("https://openrouter.ai/api/v1/chat/completions")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Authorization", "Bearer ${getApiKey()}")
-                setRequestProperty("HTTP-Referer", "https://github.com/CapriMobile")
-                setRequestProperty("X-Title", "Capri Mobile")
-                doOutput = true
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-
-            val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-            val musicContext = if (songStatus != "Nothing playing") "D'S CURRENTLY PLAYING SPOTIFY TRACK: $songStatus." else "NO MUSIC IS PLAYING ON SPOTIFY RIGHT NOW."
-            val appContext = "D'S CURRENTLY ACTIVE APP ON SCREEN: $currentForegroundApp."
-            val prompt = "$personality\n$appContext\n$musicContext\n[Action: $instruction]"
-
-            val jsonBody = JSONObject().apply {
-                put("model", "openrouter/free")
-                val messagesArray = JSONArray()
-                messagesArray.put(JSONObject().put("role", "user").put("content", prompt))
-                put("messages", messagesArray)
-            }
-
-            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-
-            if (conn.responseCode != 200) return "You still there, choom?"
-
-            val responseString = conn.inputStream.bufferedReader().use { it.readText() }
-            val jsonResponse = JSONObject(responseString)
-            jsonResponse.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-                .trim()
-        } catch (_: Exception) {
-            "You still there, choom?"
-        }
-    }
-
     private fun updateContainerVisuals() {
         val container = containerView ?: return
         val img = character ?: return
+        val density = resources.displayMetrics.density
 
         if (isAlternateForm) {
             container.background = null
             img.setImageDrawable(starburstDrawable)
             startStarburstAnimation()
             statusTag?.setTextColor(Color.parseColor("#00FFFF"))
-            statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
+            statusTag?.setBackground(GradientDrawable().apply {
+                setColor(Color.parseColor("#0A0E17"))
+                setStroke((1 * density).toInt(), Color.parseColor("#00FFFF"))
+                cornerRadius = 2 * density
+            })
             statusTag?.text = "CAPRI // OVERDRIVE"
         } else {
             stopStarburstAnimation()
@@ -673,11 +523,114 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun connectSpotify() {
+        try {
+            val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+                .setRedirectUri(SPOTIFY_REDIRECT_URI)
+                .showAuthView(true)
+                .build()
+
+            SpotifyAppRemote.connect(applicationContext, connectionParams, object : Connector.ConnectionListener {
+                override fun onConnected(appRemote: SpotifyAppRemote) {
+                    spotifyAppRemote = appRemote
+                }
+
+                override fun onFailure(throwable: Throwable) {}
+            })
+        } catch (_: Exception) {}
+    }
+
+    private fun startAppMonitoring() {
+        scope.launch(Dispatchers.IO) {
+            while (isActive && !dismissed) {
+                val detectedApp = getForegroundApp()
+                if (detectedApp != "unknown" && detectedApp != currentForegroundApp) {
+                    currentForegroundApp = detectedApp
+                }
+                delay(3000L)
+            }
+        }
+    }
+
+    private fun getForegroundApp(): String {
+        try {
+            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "unknown"
+            val time = System.currentTimeMillis()
+            val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 10000, time)
+            if (stats.isNullOrEmpty()) return "unknown"
+            val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
+            return sortedStats.firstOrNull()?.packageName?.substringAfterLast('.') ?: "unknown"
+        } catch (_: Exception) {
+            return "unknown"
+        }
+    }
+
+    private fun requestReply(): String {
+        val url = URL("https://openrouter.ai/api/v1/chat/completions")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer ${getApiKey()}")
+            doOutput = true
+            connectTimeout = 15000
+            readTimeout = 15000
+        }
+
+        val jsonBody = JSONObject().apply {
+            put("model", "openrouter/free")
+            val messagesArray = JSONArray()
+            messagesArray.put(JSONObject().put("role", "system").put("content", personality))
+            synchronized(history) {
+                history.takeLast(10).forEach { (role, content) ->
+                    messagesArray.put(JSONObject().put("role", role).put("content", content))
+                }
+            }
+            put("messages", messagesArray)
+        }
+
+        OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+        if (conn.responseCode != 200) return "Glitch detected, D."
+
+        val responseString = conn.inputStream.bufferedReader().use { it.readText() }
+        return JSONObject(responseString).getJSONArray("choices")
+            .getJSONObject(0).getJSONObject("message").getString("content").trim()
+    }
+
+    private fun requestProactiveReply(instruction: String): String {
+        return try {
+            val url = URL("https://openrouter.ai/api/v1/chat/completions")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer ${getApiKey()}")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val jsonBody = JSONObject().apply {
+                put("model", "openrouter/free")
+                val messagesArray = JSONArray()
+                messagesArray.put(JSONObject().put("role", "user").put("content", "$personality\n[Action: $instruction]"))
+                put("messages", messagesArray)
+            }
+
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+            if (conn.responseCode != 200) return "You still there, D?"
+
+            val responseString = conn.inputStream.bufferedReader().use { it.readText() }
+            JSONObject(responseString).getJSONArray("choices")
+                .getJSONObject(0).getJSONObject("message").getString("content").trim()
+        } catch (_: Exception) {
+            "You still there, D?"
+        }
+    }
+
     private fun scheduleRandomGlitch() {
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
-        val delay = Random.nextLong(IDLE_TRIGGER_MIN, IDLE_TRIGGER_MAX)
+        val delay = (6000L..12000L).random()
         randomGlitchRunnable = Runnable {
             if (!dismissed) {
                 triggerCharacterGlitch()
@@ -725,12 +678,7 @@ class FloatingCompanionService : Service() {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(
-                (12 * density).toInt(),
-                (10 * density).toInt(),
-                (12 * density).toInt(),
-                (10 * density).toInt()
-            )
+            setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#FF080C14"))
                 cornerRadius = 4 * density
@@ -742,9 +690,7 @@ class FloatingCompanionService : Service() {
         val textParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            bottomMargin = (6 * density).toInt()
-        }
+        ).apply { bottomMargin = (6 * density).toInt() }
 
         val speakerLabel = TextView(this).apply {
             text = "CAPRI >"
@@ -790,20 +736,14 @@ class FloatingCompanionService : Service() {
                 cornerRadius = 3 * density
             }
             setPadding((6 * density).toInt(), (4 * density).toInt(), (6 * density).toInt(), (4 * density).toInt())
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = (6 * density).toInt()
             }
             setOnEditorActionListener { _, action, _ ->
                 if (action == EditorInfo.IME_ACTION_SEND) {
                     submitMessage()
                     true
-                } else {
-                    false
-                }
+                } else false
             }
         }
 
@@ -823,9 +763,7 @@ class FloatingCompanionService : Service() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = (4 * density).toInt()
-            }
+            ).apply { topMargin = (4 * density).toInt() }
         }
 
         row.addView(input)
@@ -837,8 +775,7 @@ class FloatingCompanionService : Service() {
         panel.addView(row)
 
         chatParams = WindowManager.LayoutParams(
-            width,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            width, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
@@ -897,7 +834,7 @@ class FloatingCompanionService : Service() {
         idleRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
-        val randomDelay = Random.nextLong(IDLE_TRIGGER_MIN, IDLE_TRIGGER_MAX)
+        val randomDelay = (IDLE_TRIGGER_MIN..IDLE_TRIGGER_MAX).random()
         val idleTask = Runnable {
             if (dismissed || busy) return@Runnable
             triggerProactiveSpontaneousMessage()
@@ -912,20 +849,7 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-                val songChanged = try { SpotifyListenerService.songChanged } catch (_: Exception) { false }
-
-                val spontaneousPrompt = if (songStatus != "Nothing playing") {
-                    if (songChanged) {
-                        SpotifyListenerService.songChanged = false
-                        "D just switched his Spotify track to '$songStatus'. Give a casual, witty hot take on it."
-                    } else {
-                        "D is listening to '$songStatus' on Spotify while using $currentForegroundApp. Drop a casual comment about it."
-                    }
-                } else {
-                    "D has been quiet for a bit and is currently using $currentForegroundApp. Say something casual, friendly, or playfully tease him about what he's doing."
-                }
-
+                val spontaneousPrompt = "D has been quiet for a bit and is using $currentForegroundApp. Say something playful."
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
                 if (dismissed) return@launch
                 
@@ -1120,65 +1044,6 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private fun openDialer(contactOrNumber: String) {
-        try {
-            val uri = Uri.parse("tel:$contactOrNumber")
-            val intent = Intent(Intent.ACTION_DIAL, uri).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            showDialogue("TALKING", "> you: Call $contactOrNumber", "Opening the line for you, D.")
-        } catch (_: Exception) {
-            showDialogue("DORMANT", null, "Couldn't open the dialer, choom.")
-        }
-    }
-
-    private fun playSpotify(songQuery: String) {
-        try {
-            if (spotifyAppRemote != null && spotifyAppRemote!!.isConnected) {
-                val cleanQuery = if (songQuery.lowercase() == "spotify" || songQuery.isEmpty()) "cyberpunk" else songQuery
-                val searchUri = "spotify:search:$cleanQuery"
-
-                spotifyAppRemote!!.playerApi.play(searchUri)
-                showDialogue("TALKING", "> you: Play $songQuery", "Playing '$cleanQuery' on Spotify, D.")
-            } else {
-                connectSpotify()
-                
-                val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
-                val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY)
-                
-                am.dispatchMediaKeyEvent(downEvent)
-                am.dispatchMediaKeyEvent(upEvent)
-
-                showDialogue("TALKING", "> you: Play $songQuery", "Remote offline, toggled media key for '$songQuery', D.")
-            }
-        } catch (e: Exception) {
-            Log.e("FloatingService", "Spotify play error: ${e.message}")
-            showDialogue("DORMANT", null, "Couldn't queue that track up, choom.")
-        }
-    }
-
-    private fun stopSpotify() {
-        try {
-            if (spotifyAppRemote != null && spotifyAppRemote!!.isConnected) {
-                spotifyAppRemote!!.playerApi.pause()
-                showDialogue("TALKING", "> you: Stop music", "Paused Spotify via App Remote, D.")
-            } else {
-                val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE)
-                val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE)
-                
-                am.dispatchMediaKeyEvent(downEvent)
-                am.dispatchMediaKeyEvent(upEvent)
-
-                showDialogue("TALKING", "> you: Stop music", "Cut the audio stream, D.")
-            }
-        } catch (_: Exception) {
-            showDialogue("DORMANT", null, "Couldn't stop the audio, choom.")
-        }
-    }
-
     private fun submitMessage() {
         val input = chatInput ?: return
         val message = input.text.toString().trim()
@@ -1186,32 +1051,6 @@ class FloatingCompanionService : Service() {
 
         resetIdleTimer()
         input.text.clear()
-
-        val lower = message.lowercase()
-        
-        if (lower.contains("stop") || lower.contains("pause") || lower.contains("shut up")) {
-            history.add("user" to message)
-            stopSpotify()
-            return
-        }
-
-        if (lower.contains("play") || lower.contains("spotify")) {
-            history.add("user" to message)
-            val query = if (lower.contains("play")) {
-                lower.substringAfter("play").trim()
-            } else {
-                "cyberpunk"
-            }
-            playSpotify(if (query.isNotEmpty()) query else "cyberpunk")
-            return
-        }
-
-        if (lower.contains("call")) {
-            history.add("user" to message)
-            val query = lower.substringAfter("call").trim()
-            openDialer(query)
-            return
-        }
 
         busy = true
         history.add("user" to message)
