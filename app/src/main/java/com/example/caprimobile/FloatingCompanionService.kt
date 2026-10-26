@@ -7,10 +7,16 @@ import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -154,6 +160,110 @@ class FloatingCompanionService : Service() {
             Log.e("FloatingService", "Crash prevented in onCreate: ${e.message}", e)
             stopSelf()
         }
+    }
+
+    // --- Custom Procedural Cyberpunk Starburst Drawable ---
+    class CyberpunkStarburstDrawable : Drawable() {
+        private val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#E60039")
+            style = Paint.Style.FILL
+        }
+        private val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#00E676")
+            style = Paint.Style.FILL
+        }
+        private val purplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#7C4DFF")
+            style = Paint.Style.FILL
+        }
+        private val darkBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#0A0E17")
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        private val eyeOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#00FFFF")
+            style = Paint.Style.STROKE
+            strokeWidth = 6f
+        }
+        private val eyeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#110A1F")
+            style = Paint.Style.FILL
+        }
+        private val eyePupilPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#2979FF")
+            style = Paint.Style.FILL
+        }
+        private val eyeCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FFFFFF")
+            style = Paint.Style.FILL
+        }
+
+        override fun draw(canvas: Canvas) {
+            val w = bounds.width().toFloat()
+            val h = bounds.height().toFloat()
+            val cx = w / 2f
+            val cy = h / 2f
+            val radius = w.coerceAtMost(h) * 0.42f
+
+            canvas.save()
+            canvas.translate(cx, cy)
+
+            // Draw multi-pointed starburst spikes (Red & Green diamond layers)
+            for (i in 0 until 8) {
+                canvas.save()
+                canvas.rotate(i * 45f)
+                val path = Path().apply {
+                    moveTo(0f, -radius * 1.3f)
+                    lineTo(radius * 0.3f, 0f)
+                    lineTo(0f, radius * 0.4f)
+                    lineTo(-radius * 0.3f, 0f)
+                    close()
+                }
+                val paint = if (i % 2 == 0) redPaint else greenPaint
+                canvas.drawPath(path, paint)
+                canvas.drawPath(path, darkBorderPaint)
+                canvas.restore()
+            }
+
+            // Central Diamond Base (Purple)
+            val diamondPath = Path().apply {
+                moveTo(0f, -radius * 0.8f)
+                lineTo(radius * 0.8f, 0f)
+                lineTo(0f, radius * 0.8f)
+                lineTo(-radius * 0.8f, 0f)
+                close()
+            }
+            canvas.drawPath(diamondPath, purplePaint)
+            canvas.drawPath(diamondPath, darkBorderPaint)
+
+            // Central Eye Frame (Cyan Diamond)
+            val eyeBox = radius * 0.55f
+            val eyePath = Path().apply {
+                moveTo(0f, -eyeBox)
+                lineTo(eyeBox, 0f)
+                lineTo(0f, eyeBox)
+                lineTo(-eyeBox, 0f)
+                close()
+            }
+            canvas.drawPath(eyePath, eyeFillPaint)
+            canvas.drawPath(eyePath, eyeOuterPaint)
+
+            // Eye Pupil & Core
+            canvas.drawCircle(0f, 0f, radius * 0.22f, eyePupilPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
+
+            canvas.restore()
+        }
+
+        override fun setAlpha(alpha: Int) {
+            redPaint.alpha = alpha
+            greenPaint.alpha = alpha
+            purplePaint.alpha = alpha
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
     }
 
     private fun connectSpotify() {
@@ -306,6 +416,32 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun updateContainerVisuals() {
+        val container = containerView ?: return
+        val img = character ?: return
+        val density = resources.displayMetrics.density
+
+        if (isAlternateForm) {
+            // Overdrive Form Style with Cyan neon border & procedural Starburst vector graphic
+            container.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FF0A1622"))
+                setStroke((2 * density).toInt(), Color.parseColor("#00FFFF"))
+                cornerRadius = 4 * density
+            }
+            img.setImageDrawable(CyberpunkStarburstDrawable())
+            statusTag?.setTextColor(Color.parseColor("#00FFFF"))
+            statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
+            statusTag?.text = "CAPRI // OVERDRIVE"
+        } else {
+            // Standard Dormant Form Style
+            container.background = ContextCompat.getDrawable(this, R.drawable.cyberpunk_border)
+            img.setImageResource(R.drawable.capri_closed)
+            statusTag?.setTextColor(Color.parseColor("#FFCC00"))
+            statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
+            statusTag?.text = "CAPRI // DORMANT"
+        }
+    }
+
     private fun createCharacterContainer() {
         val density = resources.displayMetrics.density
         val width = (160 * density).toInt()
@@ -405,16 +541,13 @@ class FloatingCompanionService : Service() {
                             if (held >= LONG_PRESS_DURATION) {
                                 dismissCompanion()
                             } else if (!dismissed) {
-                                // Double-tap vs Single-tap logic
                                 val now = System.currentTimeMillis()
                                 if (now - lastTapTime < 350L) {
-                                    // Double tap detected -> Toggle Form!
                                     singleTapRunnable?.let { handler.removeCallbacks(it) }
                                     singleTapRunnable = null
                                     lastTapTime = 0L
                                     toggleAlternateForm()
                                 } else {
-                                    // Single tap -> wait briefly to ensure it's not a double tap, then toggle chat
                                     lastTapTime = now
                                     singleTapRunnable = Runnable {
                                         if (!dismissed) {
@@ -446,13 +579,12 @@ class FloatingCompanionService : Service() {
 
     private fun toggleAlternateForm() {
         isAlternateForm = !isAlternateForm
-        setMouthOpen(false) // Refresh current expression based on form
+        updateContainerVisuals()
+        setMouthOpen(false)
         
         val formMessage = if (isAlternateForm) {
-            statusTag?.text = "CAPRI // OVERDRIVE"
-            "Shifted into alternate form, D."
+            "Shifted into overdrive form, D."
         } else {
-            statusTag?.text = "CAPRI // DORMANT"
             "Back to standard form."
         }
         
@@ -502,7 +634,7 @@ class FloatingCompanionService : Service() {
             panel.animate().cancel()
             panel.alpha = 0f
             panel.visibility = View.GONE
-            statusTag?.text = if (isAlternateForm) "CAPRI // OVERDRIVE" else "CAPRI // DORMANT"
+            updateContainerVisuals()
             stopMouthAnimation()
 
             chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -554,7 +686,15 @@ class FloatingCompanionService : Service() {
                             cornerRadius = 4f * resources.displayMetrics.density
                         }
                     } else {
-                        ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
+                        if (isAlternateForm) {
+                            GradientDrawable().apply {
+                                setColor(Color.parseColor("#FF0A1622"))
+                                setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#00FFFF"))
+                                cornerRadius = 4 * resources.displayMetrics.density
+                            }
+                        } else {
+                            ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
+                        }
                     }
                     container.background = flashDrawable
 
@@ -562,7 +702,7 @@ class FloatingCompanionService : Service() {
                         charParams.x = originalX
                         charParams.y = originalY
                         safeUpdateViewLayout(container, charParams)
-                        container.background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
+                        updateContainerVisuals()
                         repositionChat()
                     }
                 }
@@ -791,15 +931,14 @@ class FloatingCompanionService : Service() {
     }
 
     private fun setMouthOpen(open: Boolean) {
-        val imgRes = if (open) R.drawable.capri_open else R.drawable.capri_closed
-        character?.setImageResource(imgRes)
-
-        // Alternate form visual styling shift (Cyan tint)
-        if (isAlternateForm) {
-            character?.setColorFilter(Color.parseColor("#00FFFF"))
+        if (!isAlternateForm) {
+            val imgRes = if (open) R.drawable.capri_open else R.drawable.capri_closed
+            character?.setImageResource(imgRes)
         } else {
-            character?.clearColorFilter()
+            // Keep procedural starburst active during typing
+            character?.setImageDrawable(CyberpunkStarburstDrawable())
         }
+        character?.clearColorFilter()
     }
 
     private fun stopMouthAnimation() {
@@ -945,7 +1084,7 @@ class FloatingCompanionService : Service() {
                         charParams.x = originalX
                         charParams.y = originalY
                         safeUpdateViewLayout(panel, charParams)
-                        statusTag?.text = if (isAlternateForm) "CAPRI // OVERDRIVE" else "CAPRI // DORMANT"
+                        updateContainerVisuals()
                         stopMouthAnimation()
                         repositionChat()
                     }
@@ -988,15 +1127,14 @@ class FloatingCompanionService : Service() {
     private fun playSpotify(songQuery: String) {
         try {
             if (spotifyAppRemote != null && spotifyAppRemote!!.isConnected) {
-                val searchUri = if (songQuery.isNotEmpty() && songQuery.lowercase() != "spotify") {
-                    "spotify:search:$songQuery"
-                } else {
-                    "spotify:track:7qiZfU4dY1lWllzX7mPBI3"
-                }
+                val cleanQuery = if (songQuery.lowercase() == "spotify" || songQuery.isEmpty()) "cyberpunk" else songQuery
+                val searchUri = "spotify:search:$cleanQuery"
 
                 spotifyAppRemote!!.playerApi.play(searchUri)
-                showDialogue("TALKING", "> you: Play $songQuery", "Playing '$songQuery' on Spotify, D.")
+                showDialogue("TALKING", "> you: Play $songQuery", "Playing '$cleanQuery' on Spotify, D.")
             } else {
+                connectSpotify()
+                
                 val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
                 val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY)
@@ -1004,7 +1142,7 @@ class FloatingCompanionService : Service() {
                 am.dispatchMediaKeyEvent(downEvent)
                 am.dispatchMediaKeyEvent(upEvent)
 
-                showDialogue("TALKING", "> you: Play $songQuery", "Toggled your background audio, D.")
+                showDialogue("TALKING", "> you: Play $songQuery", "Remote offline, toggled media key for '$songQuery', D.")
             }
         } catch (e: Exception) {
             Log.e("FloatingService", "Spotify play error: ${e.message}")
