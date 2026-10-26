@@ -100,7 +100,6 @@ class FloatingCompanionService : Service() {
     private var dialogueGeneration = 0
     private val history = mutableListOf<Pair<String, String>>()
 
-    // Spotify App Remote Integration Variables
     private var spotifyAppRemote: SpotifyAppRemote? = null
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
@@ -125,43 +124,54 @@ class FloatingCompanionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (!Settings.canDrawOverlays(this)) {
+        try {
+            if (!Settings.canDrawOverlays(this)) {
+                stopSelf()
+                return
+            }
+            isRunning = true
+            startForeground(NOTIFICATION_ID, createNotification())
+            wm = getSystemService(WINDOW_SERVICE) as WindowManager
+
+            createCharacterContainer()
+            createChatWindow()
+
+            val greeting = "Decided to pop up on your screen. Don't stare too hard, D."
+            history.add("assistant" to greeting)
+            showDialogue("TALKING", "> you: Hey Capri.", greeting)
+            
+            resetIdleTimer()
+            scheduleRandomGlitch()
+            startAppMonitoring()
+            
+            // Delay Spotify connection slightly so it doesn't collide with window layout pass
+            handler.postDelayed({ connectSpotify() }, 500)
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Crash prevented in onCreate: ${e.message}", e)
             stopSelf()
-            return
         }
-        isRunning = true
-        startForeground(NOTIFICATION_ID, createNotification())
-        wm = getSystemService(WINDOW_SERVICE) as WindowManager
-
-        createCharacterContainer()
-        createChatWindow()
-
-        val greeting = "Decided to pop up on your screen. Don't stare too hard, D."
-        history.add("assistant" to greeting)
-        showDialogue("TALKING", "> you: Hey Capri.", greeting)
-        
-        resetIdleTimer()
-        scheduleRandomGlitch()
-        startAppMonitoring()
-        connectSpotify()
     }
 
     private fun connectSpotify() {
-        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
-            .setRedirectUri(SPOTIFY_REDIRECT_URI)
-            .showAuthView(true)
-            .build()
+        try {
+            val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+                .setRedirectUri(SPOTIFY_REDIRECT_URI)
+                .showAuthView(true)
+                .build()
 
-        SpotifyAppRemote.connect(applicationContext, connectionParams, object : Connector.ConnectionListener {
-            override fun onConnected(appRemote: SpotifyAppRemote) {
-                spotifyAppRemote = appRemote
-                Log.d("FloatingService", "Connected to Spotify App Remote successfully!")
-            }
+            SpotifyAppRemote.connect(applicationContext, connectionParams, object : Connector.ConnectionListener {
+                override fun onConnected(appRemote: SpotifyAppRemote) {
+                    spotifyAppRemote = appRemote
+                    Log.d("FloatingService", "Connected to Spotify App Remote successfully!")
+                }
 
-            override fun onFailure(throwable: Throwable) {
-                Log.e("FloatingService", "Spotify connection failed: ${throwable.message}", throwable)
-            }
-        })
+                override fun onFailure(throwable: Throwable) {
+                    Log.e("FloatingService", "Spotify connection failed: ${throwable.message}")
+                }
+            })
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Spotify init exception: ${e.message}")
+        }
     }
 
     private fun startAppMonitoring() {
@@ -401,7 +411,13 @@ class FloatingCompanionService : Service() {
 
         containerView = container
         character = image
-        wm.addView(container, charParams)
+        
+        try {
+            wm.addView(container, charParams)
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Error adding character window: ${e.message}")
+        }
+        
         glitchInAnimation()
     }
 
@@ -650,7 +666,12 @@ class FloatingCompanionService : Service() {
         chatInput = input
         chatWindow = panel
 
-        wm.addView(panel, chatParams)
+        try {
+            wm.addView(panel, chatParams)
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Error adding chat window: ${e.message}")
+        }
+        
         repositionChat()
     }
 
@@ -920,7 +941,6 @@ class FloatingCompanionService : Service() {
 
     private fun playSpotify(songQuery: String) {
         try {
-            // Using Spotify App Remote if connected, with media key fallback
             if (spotifyAppRemote != null && spotifyAppRemote!!.isConnected) {
                 spotifyAppRemote!!.playerApi.resume()
                 showDialogue("TALKING", "> you: Play $songQuery", "Resumed Spotify via App Remote, D.")
@@ -969,14 +989,12 @@ class FloatingCompanionService : Service() {
 
         val lower = message.lowercase()
         
-        // Stop / Pause music command
         if (lower.contains("stop") || lower.contains("pause") || lower.contains("shut up")) {
             history.add("user" to message)
             stopSpotify()
             return
         }
 
-        // Play music command
         if (lower.contains("play") || lower.contains("spotify")) {
             history.add("user" to message)
             val query = if (lower.contains("play")) {
@@ -988,7 +1006,6 @@ class FloatingCompanionService : Service() {
             return
         }
 
-        // Call command
         if (lower.contains("call")) {
             history.add("user" to message)
             val query = lower.substringAfter("call").trim()
@@ -1049,7 +1066,7 @@ class FloatingCompanionService : Service() {
         scope.cancel()
 
         spotifyAppRemote?.let {
-            SpotifyAppRemote.disconnect(it)
+            try { SpotifyAppRemote.disconnect(it) } catch (_: Exception) {}
         }
 
         try { containerView?.let { wm.removeView(it) } } catch (_: Exception) {}
@@ -1113,7 +1130,7 @@ class FloatingCompanionService : Service() {
         scope.cancel()
 
         spotifyAppRemote?.let {
-            SpotifyAppRemote.disconnect(it)
+            try { SpotifyAppRemote.disconnect(it) } catch (_: Exception) {}
         }
 
         try { containerView?.let { wm.removeView(it) } } catch (_: Exception) {}
