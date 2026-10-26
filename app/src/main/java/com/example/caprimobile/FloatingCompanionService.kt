@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -346,7 +347,6 @@ class FloatingCompanionService : Service() {
                             charParams.x = (startX + dx).coerceAtLeast(0)
                             charParams.y = (startY + dy).coerceAtLeast(0)
                             safeUpdateViewLayout(container, charParams)
-                            // Smooth live repositioning during drag
                             repositionChat()
                         }
                         return true
@@ -649,7 +649,6 @@ class FloatingCompanionService : Service() {
         val targetY = (if (placeBelow) charParams.y + charH else charParams.y - panelH)
             .coerceIn(0, (screenH - panelH - 20).coerceAtLeast(0))
 
-        // Smooth translation interpolation instead of sudden jumps
         chatParams.x += ((targetX - chatParams.x) * 0.4f).toInt()
         chatParams.y += ((targetY - chatParams.y) * 0.4f).toInt()
 
@@ -876,6 +875,49 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun handleDeviceAction(message: String) {
+        val lower = message.lowercase().trim()
+        when {
+            lower.startsWith("call ") -> {
+                val query = message.substring(5).trim()
+                openDialer(query)
+            }
+            lower.startsWith("play ") -> {
+                val query = message.substring(5).trim()
+                playSpotify(query)
+            }
+        }
+    }
+
+    private fun openDialer(contactOrNumber: String) {
+        try {
+            val uri = Uri.parse("tel:$contactOrNumber")
+            val intent = Intent(Intent.ACTION_DIAL, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            showDialogue("TALKING", "> you: Call $contactOrNumber", "Opening the line for you, D.")
+        } catch (_: Exception) {
+            showDialogue("DORMANT", null, "Couldn't open the dialer, choom.")
+        }
+    }
+
+    private fun playSpotify(songQuery: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$songQuery")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            showDialogue("TALKING", "> you: Play $songQuery", "Firing up '$songQuery' on Spotify.")
+        } catch (_: Exception) {
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$songQuery")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(webIntent)
+            showDialogue("TALKING", "> you: Play $songQuery", "Opening Spotify search for you.")
+        }
+    }
+
     private fun submitMessage() {
         val input = chatInput ?: return
         val message = input.text.toString().trim()
@@ -883,9 +925,16 @@ class FloatingCompanionService : Service() {
 
         resetIdleTimer()
         input.text.clear()
+
+        val lower = message.lowercase()
+        if (lower.startsWith("call ") || lower.startsWith("play ")) {
+            history.add("user" to message)
+            handleDeviceAction(message)
+            return
+        }
+
         busy = true
         history.add("user" to message)
-        
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
         scope.launch {
