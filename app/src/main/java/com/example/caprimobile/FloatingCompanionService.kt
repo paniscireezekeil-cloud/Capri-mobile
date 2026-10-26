@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -18,6 +19,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -890,17 +892,16 @@ class FloatingCompanionService : Service() {
 
     private fun playSpotify(songQuery: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$songQuery")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            showDialogue("TALKING", "> you: Play $songQuery", "Firing up '$songQuery' on Spotify.")
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
+            val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY)
+            
+            am.dispatchMediaKeyEvent(downEvent)
+            am.dispatchMediaKeyEvent(upEvent)
+
+            showDialogue("TALKING", "> you: Play $songQuery", "Toggled your background audio, D.")
         } catch (_: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$songQuery")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(webIntent)
-            showDialogue("TALKING", "> you: Play $songQuery", "Opening Spotify search for you.")
+            showDialogue("DORMANT", null, "Couldn't hook into the audio stream, choom.")
         }
     }
 
