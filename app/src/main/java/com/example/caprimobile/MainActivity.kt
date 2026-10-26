@@ -10,7 +10,7 @@ import com.spotify.android.appremote.api.SpotifyAppRemote
 
 class MainActivity : AppCompatActivity() {
 
-    private val CLIENT_ID = "YOUR_CLIENT_ID"
+    private val CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val REDIRECT_URI = "com.example.caprimobile://callback"
     private var spotifyAppRemote: SpotifyAppRemote? = null
 
