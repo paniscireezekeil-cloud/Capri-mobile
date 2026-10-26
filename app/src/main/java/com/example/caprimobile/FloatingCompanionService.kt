@@ -394,47 +394,61 @@ class FloatingCompanionService : Service() {
 
     private fun createChatWindow() {
         val density = resources.displayMetrics.density
-        val width = (220 * density).toInt()
+        val width = (240 * density).toInt()
 
+        // Comic-style Visual Novel Speech Bubble Panel
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
+                (12 * density).toInt(),
                 (10 * density).toInt(),
-                (10 * density).toInt(),
-                (10 * density).toInt(),
-                (8 * density).toInt()
+                (12 * density).toInt(),
+                (10 * density).toInt()
             )
-            // Clean transparent background on the layout container so it doesn't block children
-            setBackgroundColor(Color.TRANSPARENT)
-            elevation = 6f * density
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FF080C14")) // Solid dark comic box background
+                cornerRadius = 4 * density
+                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
+            }
+            elevation = 8f * density
         }
 
         val textParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
-            bottomMargin = (4 * density).toInt()
+            bottomMargin = (6 * density).toInt()
+        }
+
+        // Speaker label matching the reference style ("CAPRI >")
+        val speakerLabel = TextView(this).apply {
+            text = "CAPRI >"
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#FFCC00"))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (2 * density).toInt() }
         }
 
         val userQuery = TextView(this).apply {
             text = ""
             textSize = 10f
             setTextColor(Color.parseColor("#AA8844"))
-            setBackgroundColor(Color.parseColor("#0F141F"))
-            setPadding((6 * density).toInt(), (4 * density).toInt(), (6 * density).toInt(), (4 * density).toInt())
             layoutParams = textParams
         }
 
-        // Background set directly on the TextView so letters are guaranteed to render on top with solid background
+        // Dialogue text view with solid background framing to guarantee crisp visibility
         val dialogue = TextView(this).apply {
             text = "Online."
-            textSize = 13f
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#FFCC00"))
+            setTextColor(Color.parseColor("#FFFFFF"))
             includeFontPadding = false
-            setBackgroundColor(Color.parseColor("#0F141F"))
+            setBackgroundColor(Color.parseColor("#111622"))
             setPadding((8 * density).toInt(), (6 * density).toInt(), (8 * density).toInt(), (6 * density).toInt())
-            minHeight = (24 * density).toInt()
+            minHeight = (28 * density).toInt()
             layoutParams = textParams
         }
 
@@ -494,6 +508,7 @@ class FloatingCompanionService : Service() {
         row.addView(send)
         
         panel.addView(userQuery)
+        panel.addView(speakerLabel)
         panel.addView(dialogue)
         panel.addView(row)
 
@@ -531,8 +546,8 @@ class FloatingCompanionService : Service() {
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
-        val panelW = panel.width.takeIf { it > 0 } ?: (220 * density).toInt()
-        val panelH = panel.height.takeIf { it > 0 } ?: (110 * density).toInt()
+        val panelW = panel.width.takeIf { it > 0 } ?: (240 * density).toInt()
+        val panelH = panel.height.takeIf { it > 0 } ?: (130 * density).toInt()
 
         val placeRight = centerX < screenW / 2
         val placeBelow = centerY < screenH / 2
@@ -712,14 +727,14 @@ class FloatingCompanionService : Service() {
                         setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
                     }
 
-                    safeUpdateViewLayout(panel, charParams)
+                    safeUpdateViewLayout(panel, chatParams)
 
                     if (index == steps.lastIndex) {
                         panel.alpha = 0f
                         panel.visibility = View.GONE
                         charParams.x = originalX
                         charParams.y = originalY
-                        safeUpdateViewLayout(panel, charParams)
+                        safeUpdateViewLayout(panel, chatParams)
                         statusTag?.text = "CAPRI // DORMANT"
                         stopMouthAnimation()
                     }
@@ -729,31 +744,18 @@ class FloatingCompanionService : Service() {
     }
 
     private fun openKeyboard() {
-        val input = chatInput ?: return
         val panel = chatWindow ?: return
-        val density = resources.displayMetrics.density
-
-        fadeRunnable?.let { handler.removeCallbacks(it) }
-        fadeRunnable = null
-        typingRunnable?.let { handler.removeCallbacks(it) }
-        typingRunnable = null
-
-        dialogueGeneration++
-        glitchRunId++
-
-        panel.animate().cancel()
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
-        panel.setBackgroundColor(Color.TRANSPARENT)
 
         chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         safeUpdateViewLayout(panel, chatParams)
 
-        input.requestFocus()
-        input.post {
+        chatInput?.requestFocus()
+        chatInput?.post {
             if (!dismissed) {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+                imm.showSoftInput(chatInput, InputMethodManager.SHOW_IMPLICIT)
             }
         }
     }
