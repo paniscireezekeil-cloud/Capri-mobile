@@ -509,26 +509,17 @@ class FloatingCompanionService : Service() {
         panel.addView(dialogue)
         panel.addView(row)
 
-        // FLAG_NOT_TOUCH_MODAL + FLAG_WATCH_OUTSIDE_TOUCH allows touches outside the box to pass through and dismisses on outside tap
+        // FLAG_NOT_TOUCH_MODAL without outside-touch listener: stays open permanently, touches pass through to apps behind it
         chatParams = WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 200
             y = 300
-        }
-
-        panel.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_OUTSIDE) {
-                toggleChatWindow()
-                true
-            } else {
-                false
-            }
         }
 
         userQueryText = userQuery
@@ -667,7 +658,6 @@ class FloatingCompanionService : Service() {
                     dialogueView.invalidate()
                     panel.requestLayout()
 
-                    // Mouth flaps per word boundary instead of every single letter
                     if (!currentChar.isWhitespace() && isWordBoundary) {
                         setMouthOpen(true)
                         isWordBoundary = false
@@ -686,7 +676,6 @@ class FloatingCompanionService : Service() {
                     dialogueView.invalidate()
                     panel.requestLayout()
 
-                    // Wait 3 full seconds after typing completes before triggering the glitch out
                     val timer = Runnable {
                         if (generation == dialogueGeneration && !dismissed) {
                             glitchDialogue()
@@ -761,7 +750,7 @@ class FloatingCompanionService : Service() {
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
 
-        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         safeUpdateViewLayout(panel, chatParams)
 
         chatInput?.requestFocus()
