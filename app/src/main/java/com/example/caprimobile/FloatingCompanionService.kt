@@ -32,6 +32,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +69,10 @@ class FloatingCompanionService : Service() {
         var currentForegroundApp: String = "unknown"
         var isRunning: Boolean = false
     }
+
+    private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
+    private val SPOTIFY_REDIRECT_URI = "caprimobile://callback"
+    private var spotifyAppRemote: SpotifyAppRemote? = null
 
     private lateinit var wm: WindowManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -124,6 +131,8 @@ class FloatingCompanionService : Service() {
         startForeground(NOTIFICATION_ID, createNotification())
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        connectSpotifyRemote()
+
         createCharacterContainer()
         createChatWindow()
 
@@ -134,6 +143,25 @@ class FloatingCompanionService : Service() {
         resetIdleTimer()
         scheduleRandomGlitch()
         startAppMonitoring()
+    }
+
+    private fun connectSpotifyRemote() {
+        if (spotifyAppRemote != null && spotifyAppRemote!!.isConnected) return
+
+        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+            .setRedirectUri(SPOTIFY_REDIRECT_URI)
+            .showAuthView(false)
+            .build()
+
+        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
+            override fun onConnected(appRemote: SpotifyAppRemote) {
+                spotifyAppRemote = appRemote
+            }
+
+            override fun onFailure(throwable: Throwable) {
+                spotifyAppRemote = null
+            }
+        })
     }
 
     private fun startAppMonitoring() {
@@ -891,34 +919,46 @@ class FloatingCompanionService : Service() {
     }
 
     private fun playSpotify(songQuery: String) {
-        try {
-            // Use Spotify search intent so it actually opens/searches for the requested song
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$songQuery")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            showDialogue("TALKING", "> you: Play $songQuery", "Firing up '$songQuery' on Spotify for you.")
-        } catch (_: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$songQuery")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(webIntent)
-            showDialogue("TALKING", "> you: Play $songQuery", "Opening Spotify search for '$songQuery'.")
+        if (spotifyAppRemote == null || !spotifyAppRemote!!.isConnected) {
+            connectSpotifyRemote()
         }
+
+        handler.postDelayed({
+            val remote = spotifyAppRemote
+            if (remote != null && remote.isConnected) {
+                if (songQuery.isNotEmpty() && songQuery != "cyberpunk") {
+                    remote.playerApi.play("spotify:search:$songQuery")
+                } else {
+                    remote.playerApi.resume()
+                }
+                showDialogue("TALKING", "> you: Play $songQuery", "Spinning up '$songQuery' on Spotify directly, D.")
+            } else {
+                try {
+                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    showDialogue("TALKING", "> you: Play $songQuery", "Toggled Spotify background audio stream.")
+                } catch (_: Exception) {
+                    showDialogue("DORMANT", null, "Spotify remote disconnected, choom.")
+                }
+            }
+        }, 300L)
     }
 
     private fun stopSpotify() {
-        try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE)
-            val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE)
-            
-            am.dispatchMediaKeyEvent(downEvent)
-            am.dispatchMediaKeyEvent(upEvent)
-
-            showDialogue("TALKING", "> you: Turn off music", "Cut the audio stream, D.")
-        } catch (_: Exception) {
-            showDialogue("DORMANT", null, "Couldn't stop the audio, choom.")
+        val remote = spotifyAppRemote
+        if (remote != null && remote.isConnected) {
+            remote.playerApi.pause()
+            showDialogue("TALKING", "> you: Turn off music", "Stopped Spotify playback.")
+        } else {
+            try {
+                val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+                showDialogue("TALKING", "> you: Turn off music", "Cut the background audio stream, D.")
+            } catch (_: Exception) {
+                showDialogue("DORMANT", null, "Couldn't stop the audio, choom.")
+            }
         }
     }
 
@@ -932,16 +972,14 @@ class FloatingCompanionService : Service() {
 
         val lower = message.lowercase()
         
-        // Stop / Turn off music command (expanded to catch "off", "stop", "pause", "shut")
         if (lower.contains("stop") || lower.contains("pause") || lower.contains("off") || lower.contains("shut")) {
             history.add("user" to message)
             stopSpotify()
             return
         }
 
-        // Play specific music command (extracts the actual search terms after "play")
         if (lower.contains("play") || lower.contains("spotify")) {
-            history.add("user" to message.trim())
+            history.add("user" to message)
             val query = if (lower.contains("play")) {
                 message.substringAfter("play", "").trim()
             } else {
@@ -956,7 +994,6 @@ class FloatingCompanionService : Service() {
             return
         }
 
-        // Call command
         if (lower.contains("call")) {
             history.add("user" to message)
             val query = message.substringAfter("call", "").trim()
@@ -1007,6 +1044,13 @@ class FloatingCompanionService : Service() {
         isRunning = false
         dialogueGeneration++
         glitchRunId++
+
+        spotifyAppRemote?.let {
+            if (it.isConnected) {
+                SpotifyAppRemote.disconnect(it)
+            }
+        }
+        spotifyAppRemote = null
 
         typingRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable?.let { handler.removeCallbacks(it) }
@@ -1068,6 +1112,14 @@ class FloatingCompanionService : Service() {
         isRunning = false
         dialogueGeneration++
         glitchRunId++
+
+        spotifyAppRemote?.let {
+            if (it.isConnected) {
+                SpotifyAppRemote.disconnect(it)
+            }
+        }
+        spotifyAppRemote = null
+
         typingRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable?.let { handler.removeCallbacks(it) }
