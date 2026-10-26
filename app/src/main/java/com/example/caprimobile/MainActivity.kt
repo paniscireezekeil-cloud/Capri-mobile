@@ -1,183 +1,184 @@
 package com.example.caprimobile
 
-import android.app.AppOpsManager
-import android.content.Context
+import android.app.Activity
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
+
+    private val black = Color.BLACK
+    private val white = Color.WHITE
+    private val darkGray = Color.rgb(40, 40, 40)
+
+    private lateinit var overlayButton: Button
+    private lateinit var notificationButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Cyberpunk Dark Root Layout
-        val rootLayout = LinearLayout(this).apply {
+        window.statusBarColor = black
+        window.navigationBarColor = black
+        window.decorView.systemUiVisibility = 0
+
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#080C14"))
-            setPadding(32, 48, 32, 48)
-            gravity = Gravity.CENTER_HORIZONTAL
-            layoutParams = ViewGroup.LayoutParams(
+            gravity = Gravity.TOP
+            setPadding(dp(18), dp(30), dp(18), dp(18))
+            setBackgroundColor(black)
+        }
+
+        val title = TextView(this).apply {
+            text = "CAPRI"
+            textSize = 36f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+        }
+
+        val subtitle = TextView(this).apply {
+            text = "Your digital companion."
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(Color.LTGRAY)
+        }
+
+        root.addView(
+            title,
+            layoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                dp(50)
+            )
+        )
+
+        root.addView(
+            subtitle,
+            layoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(42)
+            )
+        )
+
+        overlayButton = createButton("ALLOW FLOATING OVERLAY") {
+            openOverlaySettings()
+        }
+
+        notificationButton = createButton("ALLOW NOTIFICATION ACCESS") {
+            startActivity(
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
             )
         }
 
-        // Title Header
-        val title = TextView(this).apply {
-            text = "CAPRI // OS"
-            textSize = 22f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#FFCC00"))
-            gravity = Gravity.CENTER
-            letterSpacing = 0.1f
-            setPadding(0, 0, 0, 8)
-        }
-        rootLayout.addView(title)
+        root.addView(overlayButton, buttonParams())
+        root.addView(notificationButton, buttonParams())
 
-        val subtitle = TextView(this).apply {
-            text = "NEURAL COMPANION INTERFACE"
-            textSize = 10f
-            setTextColor(Color.parseColor("#00FFFF"))
+        val note = TextView(this).apply {
+            text = "Enable permissions below to let Capri work."
+            textSize = 14f
+            setTextColor(Color.GRAY)
             gravity = Gravity.CENTER
-            letterSpacing = 0.2f
-            setPadding(0, 0, 0, 32)
+            setPadding(0, dp(18), 0, dp(8))
         }
-        rootLayout.addView(subtitle)
 
-        // Button Factory for Cyberpunk Aesthetic
-        fun createCyberButton(buttonText: String, onClick: () -> Unit): Button {
-            return Button(this).apply {
-                text = buttonText
-                setTextColor(Color.parseColor("#080C14"))
-                setTypeface(null, Typeface.BOLD)
-                textSize = 13f
-                letterSpacing = 0.08f
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#FFCC00"))
-                    cornerRadius = 6f
-                }
-                setPadding(16, 24, 16, 24)
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = 16
-                }
-                setOnClickListener { onClick() }
+        root.addView(
+            note,
+            layoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        setContentView(root)
+        refreshPermissionStatus()
+    }
+
+    private fun createButton(
+        label: String,
+        action: () -> Unit
+    ): Button {
+        return Button(this).apply {
+            text = label
+            textSize = 14f
+            isAllCaps = false
+            setTextColor(white)
+
+            background = GradientDrawable().apply {
+                setColor(darkGray)
+                cornerRadius = dp(5).toFloat()
             }
+
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun buttonParams() =
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(54)
+        ).apply {
+            topMargin = dp(9)
         }
 
-        // 1. Overlay Permission Button
-        val overlayBtn = createCyberButton("ALLOW FLOATING OVERLAY") {
-            if (!Settings.canDrawOverlays(this)) {
-                val intent = Intent(
+    private fun layoutParams(width: Int, height: Int) =
+        LinearLayout.LayoutParams(width, height)
+
+    private fun openOverlaySettings() {
+        if (!Settings.canDrawOverlays(this)) {
+            startActivity(
+                Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:$packageName")
                 )
-                startActivity(intent)
-            } else {
-                Toast.makeText(this, "Overlay permission already granted.", Toast.LENGTH_SHORT).show()
-            }
+            )
         }
-        rootLayout.addView(overlayBtn)
+    }
 
-        // 2. Usage Stats Permission Button (For App Awareness)
-        val usageBtn = createCyberButton("GRANT APP-AWARENESS PERMISSION") {
-            if (!hasUsageStatsPermission()) {
-                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                startActivity(intent)
-            } else {
-                Toast.makeText(this, "Usage access already granted.", Toast.LENGTH_SHORT).show()
-            }
-        }
-        rootLayout.addView(usageBtn)
+    private fun refreshPermissionStatus() {
+        if (!::overlayButton.isInitialized) return
 
-        // 3. Summon Companion Button
-        val summonBtn = createCyberButton("SUMMON CAPRI") {
+        overlayButton.text =
             if (Settings.canDrawOverlays(this)) {
-                val serviceIntent = Intent(this, FloatingCompanionService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent)
-                } else {
-                    startService(serviceIntent)
-                }
-                Toast.makeText(this, "Capri summoned to screen.", Toast.LENGTH_SHORT).show()
+                "FLOATING OVERLAY: ENABLED"
             } else {
-                Toast.makeText(this, "Grant floating overlay permission first, D.", Toast.LENGTH_SHORT).show()
+                "ALLOW FLOATING OVERLAY"
             }
-        }
-        rootLayout.addView(summonBtn)
 
-        // 4. Dismiss Companion Button
-        val dismissBtn = createCyberButton("DISMISS CAPRI") {
-            val serviceIntent = Intent(this, FloatingCompanionService::class.java)
-            stopService(serviceIntent)
-            Toast.makeText(this, "Capri dismissed.", Toast.LENGTH_SHORT).show()
-        }
-        rootLayout.addView(dismissBtn)
-
-        // Terminal Log Box / Console Preview Header
-        val logHeader = TextView(this).apply {
-            text = "SYSTEM LOG // TERMINAL"
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#AA8844"))
-            setPadding(0, 24, 0, 8)
-        }
-        rootLayout.addView(logHeader)
-
-        // Terminal Output Screen
-        val terminalScroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#111622"))
-                setStroke(1, Color.parseColor("#444444"))
-                cornerRadius = 6f
+        notificationButton.text =
+            if (isNotificationAccessEnabled()) {
+                "NOTIFICATION ACCESS: ENABLED"
+            } else {
+                "ALLOW NOTIFICATION ACCESS"
             }
-            setPadding(16, 16, 16, 16)
-        }
-
-        val terminalText = TextView(this).apply {
-            text = "CAPRI > Decided to pop up on your screen. Don't stare too hard, D."
-            textSize = 12f
-            setTextColor(Color.parseColor("#00FF66"))
-            setTypeface(Typeface.MONOSPACE)
-        }
-        terminalScroll.addView(terminalText)
-        rootLayout.addView(terminalScroll)
-
-        setContentView(rootLayout)
     }
 
-    private fun hasUsageStatsPermission(): Boolean {
-        return try {
-            val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-            val mode = appOps.checkOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                packageName
-            )
-            mode == AppOpsManager.MODE_ALLOWED
-        } catch (_: Exception) {
-            false
+    private fun isNotificationAccessEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            "enabled_notification_listeners"
+        ) ?: return false
+
+        return enabled.split(":").any { entry ->
+            ComponentName.unflattenFromString(entry)
+                ?.packageName == packageName
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (::overlayButton.isInitialized) {
+            refreshPermissionStatus()
+        }
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 }
