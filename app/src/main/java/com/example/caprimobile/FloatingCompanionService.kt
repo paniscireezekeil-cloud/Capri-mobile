@@ -95,10 +95,15 @@ class FloatingCompanionService : Service() {
     private var longPressRunnable: Runnable? = null
     private var idleRunnable: Runnable? = null
     private var randomGlitchRunnable: Runnable? = null
+    private var singleTapRunnable: Runnable? = null
 
     private var glitchRunId = 0
     private var dialogueGeneration = 0
     private val history = mutableListOf<Pair<String, String>>()
+
+    // Form & Tap tracking variables
+    private var isAlternateForm = false
+    private var lastTapTime = 0L
 
     private var spotifyAppRemote: SpotifyAppRemote? = null
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
@@ -245,7 +250,9 @@ class FloatingCompanionService : Service() {
         OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
 
         if (conn.responseCode != 200) {
-            return "Net glitch on the free line, choom. Give me a second."
+            val errorBody = try { conn.errorStream?.bufferedReader()?.use { it.readText() } } catch (_: Exception) { "No error body" }
+            Log.e("OpenRouter", "Error code ${conn.responseCode}: $errorBody")
+            return "Net glitch (${conn.responseCode}), choom. Give me a second."
         }
 
         val responseString = conn.inputStream.bufferedReader().use { it.readText() }
@@ -398,7 +405,24 @@ class FloatingCompanionService : Service() {
                             if (held >= LONG_PRESS_DURATION) {
                                 dismissCompanion()
                             } else if (!dismissed) {
-                                toggleChatWindow()
+                                // Double-tap vs Single-tap logic
+                                val now = System.currentTimeMillis()
+                                if (now - lastTapTime < 350L) {
+                                    // Double tap detected -> Toggle Form!
+                                    singleTapRunnable?.let { handler.removeCallbacks(it) }
+                                    singleTapRunnable = null
+                                    lastTapTime = 0L
+                                    toggleAlternateForm()
+                                } else {
+                                    // Single tap -> wait briefly to ensure it's not a double tap, then toggle chat
+                                    lastTapTime = now
+                                    singleTapRunnable = Runnable {
+                                        if (!dismissed) {
+                                            toggleChatWindow()
+                                        }
+                                    }
+                                    handler.postDelayed(singleTapRunnable!!, 350L)
+                                }
                             }
                         }
                         return true
@@ -418,6 +442,21 @@ class FloatingCompanionService : Service() {
         }
         
         glitchInAnimation()
+    }
+
+    private fun toggleAlternateForm() {
+        isAlternateForm = !isAlternateForm
+        setMouthOpen(false) // Refresh current expression based on form
+        
+        val formMessage = if (isAlternateForm) {
+            statusTag?.text = "CAPRI // OVERDRIVE"
+            "Shifted into alternate form, D."
+        } else {
+            statusTag?.text = "CAPRI // DORMANT"
+            "Back to standard form."
+        }
+        
+        showDialogue("TALKING", null, formMessage)
     }
 
     private fun glitchInAnimation() {
@@ -463,7 +502,7 @@ class FloatingCompanionService : Service() {
             panel.animate().cancel()
             panel.alpha = 0f
             panel.visibility = View.GONE
-            statusTag?.text = "CAPRI // DORMANT"
+            statusTag?.text = if (isAlternateForm) "CAPRI // OVERDRIVE" else "CAPRI // DORMANT"
             stopMouthAnimation()
 
             chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -752,7 +791,15 @@ class FloatingCompanionService : Service() {
     }
 
     private fun setMouthOpen(open: Boolean) {
-        character?.setImageResource(if (open) R.drawable.capri_open else R.drawable.capri_closed)
+        val imgRes = if (open) R.drawable.capri_open else R.drawable.capri_closed
+        character?.setImageResource(imgRes)
+
+        // Alternate form visual styling shift (Cyan tint)
+        if (isAlternateForm) {
+            character?.setColorFilter(Color.parseColor("#00FFFF"))
+        } else {
+            character?.clearColorFilter()
+        }
     }
 
     private fun stopMouthAnimation() {
@@ -778,7 +825,7 @@ class FloatingCompanionService : Service() {
         val generation = dialogueGeneration
         glitchRunId++
 
-        statusTag?.text = "CAPRI // $state"
+        statusTag?.text = if (isAlternateForm) "CAPRI // OVERDRIVE" else "CAPRI // $state"
         panel.animate().cancel()
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
@@ -898,7 +945,7 @@ class FloatingCompanionService : Service() {
                         charParams.x = originalX
                         charParams.y = originalY
                         safeUpdateViewLayout(panel, charParams)
-                        statusTag?.text = "CAPRI // DORMANT"
+                        statusTag?.text = if (isAlternateForm) "CAPRI // OVERDRIVE" else "CAPRI // DORMANT"
                         stopMouthAnimation()
                         repositionChat()
                     }
@@ -1068,6 +1115,7 @@ class FloatingCompanionService : Service() {
         longPressRunnable?.let { handler.removeCallbacks(it) }
         idleRunnable?.let { handler.removeCallbacks(it) }
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
+        singleTapRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
@@ -1132,6 +1180,7 @@ class FloatingCompanionService : Service() {
         longPressRunnable?.let { handler.removeCallbacks(it) }
         idleRunnable?.let { handler.removeCallbacks(it) }
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
+        singleTapRunnable?.let { handler.removeCallbacks(it) }
         stopMouthAnimation()
         scope.cancel()
 
