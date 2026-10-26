@@ -51,7 +51,10 @@ class FloatingCompanionService : Service() {
         
         private const val LONG_PRESS_DURATION = 2500L
         private const val DIALOGUE_DELAY = 3000L
-        private const val IDLE_TRIGGER_DELAY = 45000L
+        // Updated: Randomized proactive delay between 2 to 4 minutes (120000ms - 240000ms)
+        private const val IDLE_TRIGGER_MIN = 120000L
+        private const val IDLE_TRIGGER_MAX = 240000L
+        
         private const val TYPING_SPEED = 20L
         private const val GLITCH_STEP_DELAY = 65L
     }
@@ -509,7 +512,6 @@ class FloatingCompanionService : Service() {
         panel.addView(dialogue)
         panel.addView(row)
 
-        // FLAG_NOT_TOUCH_MODAL without outside-touch listener: stays open permanently, touches pass through to apps behind it
         chatParams = WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -563,12 +565,14 @@ class FloatingCompanionService : Service() {
         idleRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
+        // Randomized interval between 2 to 4 minutes
+        val randomDelay = Random.nextLong(IDLE_TRIGGER_MIN, IDLE_TRIGGER_MAX)
         val idleTask = Runnable {
             if (dismissed || busy) return@Runnable
             triggerProactiveSpontaneousMessage()
         }
         idleRunnable = idleTask
-        handler.postDelayed(idleTask, IDLE_TRIGGER_DELAY)
+        handler.postDelayed(idleTask, randomDelay)
     }
 
     private fun triggerProactiveSpontaneousMessage() {
@@ -618,17 +622,21 @@ class FloatingCompanionService : Service() {
         val panel = chatWindow ?: return
         if (dismissed) return
 
-        typingRunnable?.let { handler.removeCallbacks(it) }
-        typingRunnable = null
         fadeRunnable?.let { handler.removeCallbacks(it) }
         fadeRunnable = null
-        stopMouthAnimation()
+
+        if (state == "THINKING") {
+            typingRunnable?.let { handler.removeCallbacks(it) }
+            typingRunnable = null
+            stopMouthAnimation()
+        }
 
         dialogueGeneration++
         val generation = dialogueGeneration
         glitchRunId++
 
         statusTag?.text = "CAPRI // $state"
+        panel.animate().cancel()
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
 
@@ -640,6 +648,15 @@ class FloatingCompanionService : Service() {
         }
 
         val targetText = botMsg ?: ""
+
+        if (state == "THINKING") {
+            dialogueView.text = targetText
+            dialogueView.requestLayout()
+            panel.requestLayout()
+            repositionChat()
+            return
+        }
+
         dialogueView.text = ""
         dialogueView.requestLayout()
         panel.requestLayout()
@@ -677,7 +694,7 @@ class FloatingCompanionService : Service() {
                     panel.requestLayout()
 
                     val timer = Runnable {
-                        if (generation == dialogueGeneration && !dismissed) {
+                        if (generation == dialogueGeneration && !dismissed && !busy) {
                             glitchDialogue()
                         }
                     }
@@ -747,6 +764,7 @@ class FloatingCompanionService : Service() {
 
     private fun openKeyboard() {
         val panel = chatWindow ?: return
+        panel.animate().cancel()
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
 
