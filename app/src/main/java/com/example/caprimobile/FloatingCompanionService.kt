@@ -205,19 +205,22 @@ class FloatingCompanionService : Service() {
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            val spikeExtension = 1.0f + 0.30f * abs(sin(pulsePhase.toDouble())).toFloat()
+            val primaryPulse = 1.0f + 0.35f * abs(sin(pulsePhase.toDouble())).toFloat()
+            val secondaryPulse = 1.0f + 0.25f * abs(sin((pulsePhase * 1.25f) + 0.8f).toDouble()).toFloat()
 
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
-                val currentSpikeScale = if (i % 2 == 0) spikeExtension else 1.0f + 0.20f * abs(sin((pulsePhase + 1.0f).toDouble())).toFloat()
+                val currentScale = if (i % 2 == 0) primaryPulse else secondaryPulse
                 
                 val path = Path().apply {
-                    moveTo(0f, -radius * 1.55f * currentSpikeScale)
-                    lineTo(radius * 0.22f, -radius * 0.15f)
-                    lineTo(0f, radius * 0.45f)
-                    lineTo(-radius * 0.22f, -radius * 0.15f)
+                    moveTo(0f, -radius * 1.55f * currentScale)
+                    lineTo(radius * 0.42f, -radius * 0.25f)
+                    lineTo(radius * 0.15f, radius * 0.15f)
+                    lineTo(0f, radius * 0.4f)
+                    lineTo(-radius * 0.15f, radius * 0.15f)
+                    lineTo(-radius * 0.42f, -radius * 0.25f)
                     close()
                 }
                 val paint = if (i % 2 == 0) redPaint else greenPaint
@@ -270,11 +273,11 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 2.0f) % 360f
-                    starburstDrawable.pulsePhase += 0.08f
+                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 1.75f) % 360f
+                    starburstDrawable.pulsePhase += 0.065f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
-                    handler.postDelayed(this, 30L)
+                    handler.postDelayed(this, 16L)
                 }
             }
         }
