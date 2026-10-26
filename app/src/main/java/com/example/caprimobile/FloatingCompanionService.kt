@@ -905,6 +905,21 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun stopSpotify() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE)
+            val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE)
+            
+            am.dispatchMediaKeyEvent(downEvent)
+            am.dispatchMediaKeyEvent(upEvent)
+
+            showDialogue("TALKING", "> you: Stop music", "Cut the audio stream, D.")
+        } catch (_: Exception) {
+            showDialogue("DORMANT", null, "Couldn't stop the audio, choom.")
+        }
+    }
+
     private fun submitMessage() {
         val input = chatInput ?: return
         val message = input.text.toString().trim()
@@ -914,6 +929,15 @@ class FloatingCompanionService : Service() {
         input.text.clear()
 
         val lower = message.lowercase()
+        
+        // Stop / Pause music command
+        if (lower.contains("stop") || lower.contains("pause") || lower.contains("shut up")) {
+            history.add("user" to message)
+            stopSpotify()
+            return
+        }
+
+        // Play music command
         if (lower.contains("play") || lower.contains("spotify")) {
             history.add("user" to message)
             val query = if (lower.contains("play")) {
@@ -924,6 +948,8 @@ class FloatingCompanionService : Service() {
             playSpotify(if (query.isNotEmpty()) query else "cyberpunk")
             return
         }
+
+        // Call command
         if (lower.contains("call")) {
             history.add("user" to message)
             val query = lower.substringAfter("call").trim()
