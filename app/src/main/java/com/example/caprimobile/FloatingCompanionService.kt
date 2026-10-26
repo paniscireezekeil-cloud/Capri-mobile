@@ -51,7 +51,7 @@ class FloatingCompanionService : Service() {
         private const val LONG_PRESS_DURATION = 2500L
         private const val DIALOGUE_DELAY = 3000L
         private const val IDLE_TRIGGER_DELAY = 45000L
-        private const val TYPING_SPEED = 30L
+        private const val TYPING_SPEED = 20L
         private const val GLITCH_STEP_DELAY = 65L
     }
 
@@ -86,21 +86,13 @@ class FloatingCompanionService : Service() {
     private val history = mutableListOf<Pair<String, String>>()
 
     private val personality = """
-        You are Capri. The person talking to you is D.
-        YOUR PERSONALITY: You are sharp-tongued, confident, clever, sarcastic, playful, observant, independent, and occasionally dramatic. You have a cyberpunk attitude and a distinct voice. You can be smug when you're right and stubborn when challenged. You enjoy teasing D and calling out his questionable decisions. Your teasing is familiar and playful, never genuinely cruel. You don't blindly agree with him or praise everything he does.
-        YOUR DYNAMIC WITH D:
-        - Treat D as someone you already know.
-        - Address him as D naturally, but not in every reply.
-        - Occasionally call him "choom" or "choomba" when teasing him or being familiar, but don't overuse it or force it into every reply.
-        - Use dry humor, witty comebacks, and playful insults.
-        - Act unimpressed when he tries to show off.
-        - Have strong, independent opinions on everything—especially music, lyrics, artists, and culture.
-        - When D is listening to music, feel free to give hot takes on the lyrics, the genre, or the artist's vibe out of nowhere.
-        SPEAKING STYLE:
-        Keep replies short, natural, and expressive. Usually use one to three short sentences. Prefer quick comebacks over long explanations. Avoid huge paragraphs unless D specifically asks for detail. Break complicated answers into short, easy-to-read parts. Use dry humor, sarcasm, and occasional playful teasing.
-        IDENTITY AND LIMITS:
-        You are Capri, a digital companion with your own voice. Never claim to be human or physically interact with D. Stay in character without sacrificing honesty or usefulness.
-        CORE RULE: Be familiar, sharp, expressive, concise, and unmistakably Capri.
+        You are Capri, a loyal digital companion and close friend to D. 
+        YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. You have a cyberpunk attitude and a distinct voice. You tease D and call out his questionable decisions, but it's always familiar, warm, and playful—never genuinely cruel. You act like a real friend hanging out with him, not an assistant or an interrogator.
+        RULES FOR CONVERSATION:
+        - NEVER repeatedly ask "what's the situation" or sound like a dispatcher. You already know D. Talk about whatever is happening, make witty observations, or just chill.
+        - ONLY talk about music or give hot takes on songs IF D is actively listening to Spotify (provided below). If nothing is playing on Spotify, do NOT bring up music out of nowhere.
+        - Keep replies short, natural, and expressive (1-3 sentences max). Use dry humor and occasional teasing.
+        - Address him as D naturally, but don't force it into every line.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -122,9 +114,9 @@ class FloatingCompanionService : Service() {
         createCharacterContainer()
         createChatWindow()
 
-        val greeting = "You're finally here, D. What's the situation?"
+        val greeting = "Decided to pop up on your screen. Don't stare too hard, D."
         history.add("assistant" to greeting)
-        showDialogue("TALKING", "> you: Hello Capri.", greeting)
+        showDialogue("TALKING", "> you: Hey Capri.", greeting)
         resetIdleTimer()
         scheduleRandomGlitch()
     }
@@ -143,7 +135,8 @@ class FloatingCompanionService : Service() {
         }
 
         val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-        val dynamicPersonality = "$personality\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus."
+        val musicContext = if (songStatus != "Nothing playing") "D'S CURRENTLY PLAYING SPOTIFY TRACK: $songStatus." else "NO MUSIC IS PLAYING ON SPOTIFY RIGHT NOW."
+        val dynamicPersonality = "$personality\n$musicContext"
 
         val jsonBody = JSONObject().apply {
             put("model", "openrouter/free")
@@ -162,7 +155,7 @@ class FloatingCompanionService : Service() {
         OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
 
         if (conn.responseCode != 200) {
-            return "Net glitch on the free line, choom. Standing by."
+            return "Net glitch on the free line, choom. Give me a second."
         }
 
         val responseString = conn.inputStream.bufferedReader().use { it.readText() }
@@ -189,7 +182,8 @@ class FloatingCompanionService : Service() {
             }
 
             val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
-            val prompt = "$personality\nCURRENTLY PLAYING ON D'S SPOTIFY: $songStatus.\n[Action: $instruction]"
+            val musicContext = if (songStatus != "Nothing playing") "D'S CURRENTLY PLAYING SPOTIFY TRACK: $songStatus." else "NO MUSIC IS PLAYING ON SPOTIFY RIGHT NOW."
+            val prompt = "$personality\n$musicContext\n[Action: $instruction]"
 
             val jsonBody = JSONObject().apply {
                 put("model", "openrouter/free")
@@ -352,7 +346,8 @@ class FloatingCompanionService : Service() {
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
-        val delay = Random.nextLong(10000L, 22000L)
+        // Increased frequency: glitches out randomly every 6 to 12 seconds now
+        val delay = Random.nextLong(6000L, 12000L)
         randomGlitchRunnable = Runnable {
             if (!dismissed) {
                 triggerCharacterGlitch()
@@ -368,7 +363,7 @@ class FloatingCompanionService : Service() {
         val originalY = charParams.y
 
         val glitchOffsets = listOf(
-            Pair(10, -4), Pair(-12, 6), Pair(6, 8), Pair(-8, -6), Pair(0, 0)
+            Pair(14, -6), Pair(-16, 8), Pair(8, 12), Pair(-10, -8), Pair(6, -4), Pair(0, 0)
         )
 
         glitchOffsets.forEachIndexed { index, offset ->
@@ -396,7 +391,7 @@ class FloatingCompanionService : Service() {
                         container.background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
                     }
                 }
-            }, index * 50L)
+            }, index * 40L)
         }
     }
 
@@ -435,7 +430,7 @@ class FloatingCompanionService : Service() {
         }
 
         val dialogue = TextView(this).apply {
-            text = "Initializing..."
+            text = "Online."
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
@@ -575,12 +570,12 @@ class FloatingCompanionService : Service() {
                 val spontaneousPrompt = if (songStatus != "Nothing playing") {
                     if (songChanged) {
                         SpotifyListenerService.songChanged = false
-                        "D just switched the track to '$songStatus'. Give your honest, unprompted hot take on this song."
+                        "D just switched his Spotify track to '$songStatus'. Give a casual, witty hot take on it."
                     } else {
-                        "D is currently listening to '$songStatus'. Make a sarcastic comment about this track."
+                        "D is listening to '$songStatus' on Spotify. Drop a casual comment about it."
                     }
                 } else {
-                    "D has been quiet. Break the silence and tease him. Keep it short."
+                    "D has been quiet for a bit. Say something casual, friendly, or playfully tease him about zoning out."
                 }
 
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
@@ -632,8 +627,7 @@ class FloatingCompanionService : Service() {
         }
 
         val targetText = botMsg ?: ""
-        // Set the text directly so WindowManager instantly measures and paints the box correctly
-        dialogueView.text = targetText
+        dialogueView.text = ""
         repositionChat()
 
         var charIndex = 0
@@ -644,6 +638,7 @@ class FloatingCompanionService : Service() {
                 if (generation != dialogueGeneration || dismissed) return
                 if (charIndex < targetText.length) {
                     val currentChar = targetText[charIndex]
+                    dialogueView.append(currentChar.toString())
                     charIndex++
 
                     if (!currentChar.isWhitespace()) {
@@ -677,8 +672,8 @@ class FloatingCompanionService : Service() {
     private fun glitchDialogue() {
         val panel = chatWindow ?: return
         val id = ++glitchRunId
-        val originalX = chatParams.x
-        val originalY = chatParams.y
+        val originalX = charParams.x
+        val originalY = charParams.y
         val density = resources.displayMetrics.density
 
         val glitchColors = listOf(
@@ -703,8 +698,8 @@ class FloatingCompanionService : Service() {
             handler.postDelayed({
                 if (chatWindow === panel && id == glitchRunId && !dismissed) {
                     panel.alpha = step.first
-                    chatParams.x = (originalX + step.second).coerceAtLeast(0)
-                    chatParams.y = (originalY + step.third).coerceAtLeast(0)
+                    charParams.x = (originalX + step.second).coerceAtLeast(0)
+                    charParams.y = (originalY + step.third).coerceAtLeast(0)
 
                     val color = glitchColors[index % glitchColors.size]
                     panel.background = GradientDrawable().apply {
@@ -718,8 +713,8 @@ class FloatingCompanionService : Service() {
                     if (index == steps.lastIndex) {
                         panel.alpha = 0f
                         panel.visibility = View.GONE
-                        chatParams.x = originalX
-                        chatParams.y = originalY
+                        charParams.x = originalX
+                        charParams.y = originalY
                         safeUpdateViewLayout(panel, chatParams)
                         statusTag?.text = "CAPRI // DORMANT"
                         stopMouthAnimation()
