@@ -1,4 +1,3 @@
-
 package com.example.caprimobile
 
 import android.app.Application
@@ -12,18 +11,22 @@ class CapriApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        val firebaseApp = FirebaseApp.initializeApp(this)
+        try {
+            val firebaseApp = FirebaseApp.initializeApp(this)
 
-        if (firebaseApp == null) {
-            Log.e("CapriAppCheck", "Firebase initialization failed")
-            return
+            if (firebaseApp == null) {
+                Log.e("CapriAppCheck", "Firebase initialization failed")
+                return
+            }
+
+            FirebaseAppCheck.getInstance(firebaseApp)
+                .installAppCheckProviderFactory(
+                    DebugAppCheckProviderFactory.getInstance()
+                )
+
+            Log.d("CapriAppCheck", "Debug App Check provider installed")
+        } catch (e: Exception) {
+            Log.e("CapriAppCheck", "Failed to initialize App Check: ${e.message}", e)
         }
-
-        FirebaseAppCheck.getInstance(firebaseApp)
-            .installAppCheckProviderFactory(
-                DebugAppCheckProviderFactory.getInstance()
-            )
-
-        Log.d("CapriAppCheck", "Debug App Check provider installed")
     }
 }
