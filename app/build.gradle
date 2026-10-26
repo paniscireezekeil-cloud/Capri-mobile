@@ -40,8 +40,8 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
-    // Spotify Remote SDK
-    implementation 'com.spotify.android:spotify-app-remote-lib:0.7.2'
+    // Local Spotify Remote SDK (v0.8.0)
+    implementation files('libs/spotify-app-remote-release-0.8.0.aar')
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
