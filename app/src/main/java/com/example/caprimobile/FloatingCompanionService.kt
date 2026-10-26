@@ -16,7 +16,6 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -102,6 +101,7 @@ class FloatingCompanionService : Service() {
     private var idleRunnable: Runnable? = null
     private var randomGlitchRunnable: Runnable? = null
     private var singleTapRunnable: Runnable? = null
+    private var starburstAnimRunnable: Runnable? = null
 
     private var glitchRunId = 0
     private var dialogueGeneration = 0
@@ -162,8 +162,10 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    // --- Custom Procedural Cyberpunk Starburst Drawable ---
+    // --- Procedural Animated Cyberpunk Starburst Drawable ---
     class CyberpunkStarburstDrawable : Drawable() {
+        var rotationAngle = 0f
+
         private val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#E60039")
             style = Paint.Style.FILL
@@ -208,6 +210,7 @@ class FloatingCompanionService : Service() {
 
             canvas.save()
             canvas.translate(cx, cy)
+            canvas.rotate(rotationAngle) // Continuously spins the starburst
 
             // Draw multi-pointed starburst spikes (Red & Green diamond layers)
             for (i in 0 until 8) {
@@ -264,6 +267,28 @@ class FloatingCompanionService : Service() {
 
         override fun setColorFilter(colorFilter: ColorFilter?) {}
         override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+
+    private val starburstDrawable = CyberpunkStarburstDrawable()
+
+    private fun startStarburstAnimation() {
+        stopStarburstAnimation()
+        starburstAnimRunnable = object : Runnable {
+            override fun run() {
+                if (isAlternateForm && !dismissed) {
+                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 3f) % 360f
+                    character?.invalidateDrawable(starburstDrawable)
+                    character?.invalidate()
+                    handler.postDelayed(this, 30L) // ~33 FPS continuous smooth spin
+                }
+            }
+        }
+        handler.post(starburstAnimRunnable!!)
+    }
+
+    private fun stopStarburstAnimation() {
+        starburstAnimRunnable?.let { handler.removeCallbacks(it) }
+        starburstAnimRunnable = null
     }
 
     private fun connectSpotify() {
@@ -422,18 +447,18 @@ class FloatingCompanionService : Service() {
         val density = resources.displayMetrics.density
 
         if (isAlternateForm) {
-            // Overdrive Form Style with Cyan neon border & procedural Starburst vector graphic
             container.background = GradientDrawable().apply {
                 setColor(Color.parseColor("#FF0A1622"))
                 setStroke((2 * density).toInt(), Color.parseColor("#00FFFF"))
                 cornerRadius = 4 * density
             }
-            img.setImageDrawable(CyberpunkStarburstDrawable())
+            img.setImageDrawable(starburstDrawable)
+            startStarburstAnimation()
             statusTag?.setTextColor(Color.parseColor("#00FFFF"))
             statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
             statusTag?.text = "CAPRI // OVERDRIVE"
         } else {
-            // Standard Dormant Form Style
+            stopStarburstAnimation()
             container.background = ContextCompat.getDrawable(this, R.drawable.cyberpunk_border)
             img.setImageResource(R.drawable.capri_closed)
             statusTag?.setTextColor(Color.parseColor("#FFCC00"))
@@ -935,8 +960,8 @@ class FloatingCompanionService : Service() {
             val imgRes = if (open) R.drawable.capri_open else R.drawable.capri_closed
             character?.setImageResource(imgRes)
         } else {
-            // Keep procedural starburst active during typing
-            character?.setImageDrawable(CyberpunkStarburstDrawable())
+            character?.setImageDrawable(starburstDrawable)
+            startStarburstAnimation()
         }
         character?.clearColorFilter()
     }
@@ -1254,6 +1279,7 @@ class FloatingCompanionService : Service() {
         idleRunnable?.let { handler.removeCallbacks(it) }
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         singleTapRunnable?.let { handler.removeCallbacks(it) }
+        stopStarburstAnimation()
         stopMouthAnimation()
         scope.cancel()
 
@@ -1319,6 +1345,7 @@ class FloatingCompanionService : Service() {
         idleRunnable?.let { handler.removeCallbacks(it) }
         randomGlitchRunnable?.let { handler.removeCallbacks(it) }
         singleTapRunnable?.let { handler.removeCallbacks(it) }
+        stopStarburstAnimation()
         stopMouthAnimation()
         scope.cancel()
 
