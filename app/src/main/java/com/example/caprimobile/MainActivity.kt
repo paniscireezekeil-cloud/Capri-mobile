@@ -106,6 +106,7 @@ class MainActivity : Activity() {
 
         setContentView(root)
         refreshPermissionStatus()
+        tryStartCapriService()
     }
 
     override fun onStart() {
@@ -135,6 +136,13 @@ class MainActivity : Activity() {
         super.onStop()
         spotifyAppRemote?.let {
             SpotifyAppRemote.disconnect(it)
+        }
+    }
+
+    private fun tryStartCapriService() {
+        if (Settings.canDrawOverlays(this)) {
+            val serviceIntent = Intent(this, FloatingCompanionService::class.java)
+            startForegroundService(serviceIntent)
         }
     }
 
@@ -214,6 +222,7 @@ class MainActivity : Activity() {
 
         if (::overlayButton.isInitialized) {
             refreshPermissionStatus()
+            tryStartCapriService()
         }
     }
 
