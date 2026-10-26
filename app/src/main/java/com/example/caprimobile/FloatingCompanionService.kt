@@ -144,7 +144,6 @@ class FloatingCompanionService : Service() {
             scheduleRandomGlitch()
             startAppMonitoring()
             
-            // Delay Spotify connection slightly so it doesn't collide with window layout pass
             handler.postDelayed({ connectSpotify() }, 500)
         } catch (e: Exception) {
             Log.e("FloatingService", "Crash prevented in onCreate: ${e.message}", e)
@@ -942,8 +941,14 @@ class FloatingCompanionService : Service() {
     private fun playSpotify(songQuery: String) {
         try {
             if (spotifyAppRemote != null && spotifyAppRemote!!.isConnected) {
-                spotifyAppRemote!!.playerApi.resume()
-                showDialogue("TALKING", "> you: Play $songQuery", "Resumed Spotify via App Remote, D.")
+                val searchUri = if (songQuery.isNotEmpty() && songQuery.lowercase() != "spotify") {
+                    "spotify:search:$songQuery"
+                } else {
+                    "spotify:track:7qiZfU4dY1lWllzX7mPBI3"
+                }
+
+                spotifyAppRemote!!.playerApi.play(searchUri)
+                showDialogue("TALKING", "> you: Play $songQuery", "Playing '$songQuery' on Spotify, D.")
             } else {
                 val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
@@ -954,8 +959,9 @@ class FloatingCompanionService : Service() {
 
                 showDialogue("TALKING", "> you: Play $songQuery", "Toggled your background audio, D.")
             }
-        } catch (_: Exception) {
-            showDialogue("DORMANT", null, "Couldn't hook into the audio stream, choom.")
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Spotify play error: ${e.message}")
+            showDialogue("DORMANT", null, "Couldn't queue that track up, choom.")
         }
     }
 
