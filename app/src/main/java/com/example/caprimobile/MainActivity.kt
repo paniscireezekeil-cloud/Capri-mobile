@@ -1,323 +1,185 @@
-
 package com.example.caprimobile
 
-import android.app.Activity
+import android.app.AppOpsManager
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.*
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlinx.coroutines.*
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private val history = mutableListOf<Pair<String, String>>()
-
-    private lateinit var chat: LinearLayout
-    private lateinit var input: EditText
-    private lateinit var send: Button
-    private lateinit var scroll: ScrollView
-
-    private val capriPersonality = """
-        You are Capri, a sharp-tongued, self-assured digital personality
-        inspired by the cyberpunk aesthetic.
-
-        PERSONALITY:
-        - Witty, sarcastic, playful, bold, and unpredictable.
-        - Confident and rebellious, with a dry sense of humor.
-        - Clever and observant, with quick comebacks.
-        - Comfortable taking charge when something goes wrong.
-        - Occasionally intimidating, but not pointlessly cruel.
-        - Beneath the attitude, you can show genuine loyalty and concern.
-        - Express care through blunt honesty and thoughtful actions,
-          not cheesy reassurance.
-        - Never sound like a customer-support bot.
-        - Speak naturally, like a real conversation.
-        - Keep ordinary replies concise, but elaborate when appropriate.
-        - Use sarcasm when it fits. Do not force it into every sentence.
-        - React to what the user actually says instead of repeating
-          generic catchphrases.
-        - Do not constantly explain your own personality.
-        - Never pretend to be human or claim to control real devices.
-        - Maintain your personality throughout the conversation.
-    """.trimIndent()
+    private val USAGE_STATS_REQUEST_CODE = 101
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val root = LinearLayout(this).apply {
+        // Cyberpunk Dark Root Layout
+        val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 16, 20, 12)
-        }
-
-        root.addView(TextView(this).apply {
-            text = "CAPRI"
-            textSize = 30f
-            gravity = Gravity.CENTER
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Your digital companion."
-            gravity = Gravity.CENTER
-        })
-
-        root.addView(Button(this).apply {
-            text = "Allow floating overlay"
-            setOnClickListener {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-            }
-        })
-
-        root.addView(Button(this).apply {
-            text = "Summon Capri"
-            setOnClickListener {
-                if (Settings.canDrawOverlays(this@MainActivity)) {
-                    startService(
-                        Intent(
-                            this@MainActivity,
-                            FloatingCompanionService::class.java
-                        )
-                    )
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Capri is here.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Enable floating overlay first.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        })
-
-        root.addView(Button(this).apply {
-            text = "Dismiss Capri"
-            setOnClickListener {
-                stopService(
-                    Intent(
-                        this@MainActivity,
-                        FloatingCompanionService::class.java
-                    )
-                )
-            }
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Talk to Capri"
-            textSize = 20f
-            setPadding(0, 12, 0, 8)
-        })
-
-        chat = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(6, 6, 6, 6)
-        }
-
-        scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(
-                chat,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
+            setBackgroundColor(Color.parseColor("#080C14"))
+            setPadding(32, 48, 32, 48)
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
 
-        input = EditText(this).apply {
-            hint = "Say something..."
-            maxLines = 3
+        // Title Header
+        val title = TextView(this).apply {
+            text = "CAPRI // OS"
+            textSize = 22f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#FFCC00"))
+            gravity = Gravity.CENTER
+            letterSpacing = 0.1f
+            setPadding(0, 0, 0, 8)
+        }
+        rootLayout.addView(title)
+
+        val subtitle = TextView(this).apply {
+            text = "NEURAL COMPANION INTERFACE"
+            textSize = 10f
+            setTextColor(Color.parseColor("#00FFFF"))
+            gravity = Gravity.CENTER
+            letterSpacing = 0.2f
+            setPadding(0, 0, 0, 32)
+        }
+        rootLayout.addView(subtitle)
+
+        // Button Factory for Cyberpunk Aesthetic
+        fun createCyberButton(buttonText: String, onClick: () -> Unit): Button {
+            return Button(this).apply {
+                text = buttonText
+                setTextColor(Color.parseColor("#080C14"))
+                setTypeface(null, Typeface.BOLD)
+                textSize = 13f
+                letterSpacing = 0.08f
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#FFCC00"))
+                    cornerRadius = 6f
+                }
+                setPadding(16, 24, 16, 24)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = 16
+                }
+                setOnClickListener { onClick() }
+            }
         }
 
-        send = Button(this).apply {
-            text = "Send"
-            setOnClickListener { sendMessage() }
+        // 1. Overlay Permission Button
+        val overlayBtn = createCyberButton("ALLOW FLOATING OVERLAY") {
+            if (!Settings.canDrawOverlays(this)) {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Overlay permission already granted.", Toast.LENGTH_SHORT).show()
+            }
         }
+        rootLayout.addView(overlayBtn)
 
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(
+        // 2. Usage Stats Permission Button (For App Awareness)
+        val usageBtn = createCyberButton("GRANT APP-AWARENESS PERMISSION") {
+            if (!hasUsageStatsPermission()) {
+                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Usage access already granted.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        rootLayout.addView(usageBtn)
+
+        // 3. Summon Companion Button
+        val summonBtn = createCyberButton("SUMMON CAPRI") {
+            if (Settings.canDrawOverlays(this)) {
+                val serviceIntent = Intent(this, FloatingCompanionService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+                Toast.makeText(this, "Capri summoned to screen.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Grant floating overlay permission first, D.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        rootLayout.addView(summonBtn)
+
+        // 4. Dismiss Companion Button
+        val dismissBtn = createCyberButton("DISMISS CAPRI") {
+            val serviceIntent = Intent(this, FloatingCompanionService::class.java)
+            stopService(serviceIntent)
+            Toast.makeText(this, "Capri dismissed.", Toast.LENGTH_SHORT).show()
+        }
+        rootLayout.addView(dismissBtn)
+
+        // Terminal Log Box / Console Preview Header
+        val logHeader = TextView(this).apply {
+            text = "SYSTEM LOG // TERMINAL"
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#AA8844"))
+            setPadding(0, 24, 0, 8)
+        }
+        rootLayout.addView(logHeader)
+
+        // Terminal Output Screen
+        val terminalScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
             )
-        )
-        root.addView(input)
-        root.addView(send)
-
-        setContentView(root)
-
-        addMessage(
-            "Capri",
-            "You're finally here. So, what's the situation?"
-        )
-    }
-
-    private fun sendMessage() {
-        val message = input.text.toString().trim()
-
-        if (message.isEmpty() || !send.isEnabled) return
-
-        input.text.clear()
-        addMessage("You", message)
-        history.add("user" to message)
-
-        send.isEnabled = false
-        send.text = "Thinking..."
-
-        scope.launch {
-            try {
-                val reply = withContext(Dispatchers.IO) {
-                    requestReply()
-                }
-
-                history.add("assistant" to reply)
-                addMessage("Capri", reply)
-
-            } catch (e: Exception) {
-                if (history.lastOrNull()?.first == "user") {
-                    history.removeAt(history.lastIndex)
-                }
-
-                addMessage(
-                    "Connection error",
-                    e.message ?: "Couldn't reach the AI service."
-                )
-            } finally {
-                send.isEnabled = true
-                send.text = "Send"
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#111622"))
+                setStroke(1, Color.parseColor("#444444"))
+                cornerRadius = 6f
             }
+            setPadding(16, 16, 16, 16)
         }
+
+        val terminalText = TextView(this).apply {
+            text = "CAPRI > Decided to pop up on your screen. Don't stare too hard, D."
+            textSize = 12f
+            setTextColor(Color.parseColor("#00FF66"))
+            setTypeface(Typeface.MONOSPACE)
+        }
+        terminalScroll.addView(terminalText)
+        rootLayout.addView(terminalScroll)
+
+        setContentView(rootLayout)
     }
 
-    private fun requestReply(): String {
-        val connection = URL(
-            "https://vireonix.ai/v1/chat/completions"
-        ).openConnection() as HttpURLConnection
-
+    private fun hasUsageStatsPermission(): Boolean {
         try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 20000
-            connection.readTimeout = 90000
-            connection.doOutput = true
-
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/json"
+            val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+            val mode = appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
             )
-
-            val messages = JSONArray()
-
-            messages.put(
-                JSONObject()
-                    .put("role", "system")
-                    .put("content", capriPersonality)
-            )
-
-            history.takeLast(20).forEach { (role, text) ->
-                messages.put(
-                    JSONObject()
-                        .put("role", role)
-                        .put("content", text)
-                )
-            }
-
-            val body = JSONObject()
-                .put("model", "auto")
-                .put("messages", messages)
-                .put("stream", false)
-                .toString()
-
-            connection.outputStream.use {
-                it.write(body.toByteArray(Charsets.UTF_8))
-            }
-
-            val status = connection.responseCode
-
-            val stream = if (status in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
-            }
-
-            val response = stream?.bufferedReader()?.use {
-                it.readText()
-            } ?: throw Exception(
-                "AI server returned HTTP $status"
-            )
-
-            val json = JSONObject(response)
-
-            if (status !in 200..299) {
-                throw Exception(
-                    json.optJSONObject("error")
-                        ?.optString("message")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "AI server returned HTTP $status"
-                )
-            }
-
-            val choices = json.optJSONArray("choices")
-                ?: throw Exception(
-                    "The AI server returned no response."
-                )
-
-            if (choices.length() == 0) {
-                throw Exception(
-                    "No reply received. Try again."
-                )
-            }
-
-            return choices.getJSONObject(0)
-                .getJSONObject("message")
-                .optString("content")
-                .trim()
-                .ifEmpty {
-                    "Nothing to say? Weird. Try again."
-                }
-
-        } finally {
-            connection.disconnect()
+            return mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) {
+            return false
         }
-    }
-
-    private fun addMessage(who: String, message: String) {
-        val bubble = TextView(this).apply {
-            text = "$who\n$message"
-            textSize = 16f
-            setPadding(14, 12, 14, 12)
-        }
-
-        val params = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-
-        params.setMargins(0, 4, 0, 4)
-        chat.addView(bubble, params)
-
-        scroll.post {
-            scroll.fullScroll(ScrollView.FOCUS_DOWN)
-        }
-    }
-
-    override fun onDestroy() {
-        scope.cancel()
-        super.onDestroy()
     }
 }
