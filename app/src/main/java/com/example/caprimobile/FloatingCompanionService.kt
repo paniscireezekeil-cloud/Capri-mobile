@@ -56,6 +56,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
+import kotlin.math.sin
 import kotlin.random.Random
 
 class FloatingCompanionService : Service() {
@@ -162,9 +163,10 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    // --- Procedural Animated Cyberpunk Starburst Drawable ---
+    // --- Procedural Animated Cyberpunk Starburst Drawable (No Box, Rotating + Spikes Pulsing) ---
     class CyberpunkStarburstDrawable : Drawable() {
         var rotationAngle = 0f
+        var pulsePhase = 0f
 
         private val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#E60039")
@@ -210,12 +212,20 @@ class FloatingCompanionService : Service() {
 
             canvas.save()
             canvas.translate(cx, cy)
-            canvas.rotate(rotationAngle) // Continuously spins the starburst
+            canvas.rotate(rotationAngle) // Continuous full rotation
 
-            // Draw multi-pointed starburst spikes (Red & Green diamond layers)
+            // Dynamic random/pulsing scale factor for the red and green spikes
+            val spikeScale = 1.0f + 0.25f * sin(pulsePhase).toFloat()
+
+            // Draw multi-pointed starburst spikes with independent random/pulsing offsets
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
+                
+                // Make alternating spikes pulse slightly out of sync for a chaotic, organic feel
+                val individualScale = spikeScale * (if (i % 2 == 0) 1f + 0.1f * sin(pulsePhase * 1.5).toFloat() else 1f)
+                canvas.scale(individualScale, individualScale)
+
                 val path = Path().apply {
                     moveTo(0f, -radius * 1.3f)
                     lineTo(radius * 0.3f, 0f)
@@ -276,10 +286,11 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 3f) % 360f
+                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 2.5f) % 360f
+                    starburstDrawable.pulsePhase += 0.12f // Controls spike enlarging/pulsing speed
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
-                    handler.postDelayed(this, 30L) // ~33 FPS continuous smooth spin
+                    handler.postDelayed(this, 30L)
                 }
             }
         }
@@ -447,17 +458,15 @@ class FloatingCompanionService : Service() {
         val density = resources.displayMetrics.density
 
         if (isAlternateForm) {
-            container.background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF0A1622"))
-                setStroke((2 * density).toInt(), Color.parseColor("#00FFFF"))
-                cornerRadius = 4 * density
-            }
+            // Overdrive Form: ZERO box/border background, transparent container, only floating animated starburst
+            container.background = null
             img.setImageDrawable(starburstDrawable)
             startStarburstAnimation()
             statusTag?.setTextColor(Color.parseColor("#00FFFF"))
             statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
             statusTag?.text = "CAPRI // OVERDRIVE"
         } else {
+            // Standard Dormant Form: Restores original bordered container and character art
             stopStarburstAnimation()
             container.background = ContextCompat.getDrawable(this, R.drawable.cyberpunk_border)
             img.setImageResource(R.drawable.capri_closed)
@@ -704,23 +713,7 @@ class FloatingCompanionService : Service() {
                     safeUpdateViewLayout(container, charParams)
                     repositionChat()
 
-                    val flashDrawable = if (index % 2 == 0) {
-                        GradientDrawable().apply {
-                            setColor(Color.parseColor("#110A1F"))
-                            setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#00FFFF"))
-                            cornerRadius = 4f * resources.displayMetrics.density
-                        }
-                    } else {
-                        if (isAlternateForm) {
-                            GradientDrawable().apply {
-                                setColor(Color.parseColor("#FF0A1622"))
-                                setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#00FFFF"))
-                                cornerRadius = 4 * resources.displayMetrics.density
-                            }
-                        } else {
-                            ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
-                        }
-                    }
+                    val flashDrawable = if (isAlternateForm) null else ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
                     container.background = flashDrawable
 
                     if (index == glitchOffsets.lastIndex) {
@@ -1236,7 +1229,7 @@ class FloatingCompanionService : Service() {
         scope.launch {
             try {
                 val reply = withContext(Dispatchers.IO) { requestReply() }
-                if (dismissed) return@launch
+                if (dismissed) return$dismissed
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
             } catch (e: CancellationException) {
