@@ -155,7 +155,7 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    // --- Exact Procedural Cyberpunk Starburst Animated Vector ---
+    // --- Exact Tuned Cyberpunk Starburst Animated Vector ---
     class CyberpunkStarburstDrawable : Drawable() {
         var rotationAngle = 0f
         var pulsePhase = 0f
@@ -175,12 +175,12 @@ class FloatingCompanionService : Service() {
         private val darkBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#0A0E17")
             style = Paint.Style.STROKE
-            strokeWidth = 3f
+            strokeWidth = 2.5f
         }
         private val eyeOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#00FFFF")
             style = Paint.Style.STROKE
-            strokeWidth = 6f
+            strokeWidth = 5f
         }
         private val eyeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#110A1F")
@@ -200,26 +200,26 @@ class FloatingCompanionService : Service() {
             val h = bounds.height().toFloat()
             val cx = w / 2f
             val cy = h / 2f
-            val radius = w.coerceAtMost(h) * 0.38f
+            val radius = w.coerceAtMost(h) * 0.40f
 
             canvas.save()
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            // Red & Green Spikes expanding and contracting along radius
-            val spikeExtension = 1.0f + 0.35f * abs(sin(pulsePhase.toDouble())).toFloat()
+            val spikeExtension = 1.0f + 0.30f * abs(sin(pulsePhase.toDouble())).toFloat()
 
+            // Draw 8 precise starburst spikes matching reference design geometry
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
-                val currentSpikeScale = if (i % 2 == 0) spikeExtension else 1.0f + 0.25f * abs(sin((pulsePhase + 1.2f).toDouble())).toFloat()
+                val currentSpikeScale = if (i % 2 == 0) spikeExtension else 1.0f + 0.20f * abs(sin((pulsePhase + 1.0f).toDouble())).toFloat()
                 
                 val path = Path().apply {
-                    moveTo(0f, -radius * 1.4f * currentSpikeScale)
-                    lineTo(radius * 0.28f, 0f)
-                    lineTo(0f, radius * 0.35f)
-                    lineTo(-radius * 0.28f, 0f)
+                    moveTo(0f, -radius * 1.55f * currentSpikeScale)
+                    lineTo(radius * 0.22f, -radius * 0.15f)
+                    lineTo(0f, radius * 0.45f)
+                    lineTo(-radius * 0.22f, -radius * 0.15f)
                     close()
                 }
                 val paint = if (i % 2 == 0) redPaint else greenPaint
@@ -230,17 +230,17 @@ class FloatingCompanionService : Service() {
 
             // Central Purple Diamond Base
             val diamondPath = Path().apply {
-                moveTo(0f, -radius * 0.75f)
-                lineTo(radius * 0.75f, 0f)
-                lineTo(0f, radius * 0.75f)
-                lineTo(-radius * 0.75f, 0f)
+                moveTo(0f, -radius * 0.65f)
+                lineTo(radius * 0.65f, 0f)
+                lineTo(0f, radius * 0.65f)
+                lineTo(-radius * 0.65f, 0f)
                 close()
             }
             canvas.drawPath(diamondPath, purplePaint)
             canvas.drawPath(diamondPath, darkBorderPaint)
 
             // Cyan Diamond Eye Frame
-            val eyeBox = radius * 0.5f
+            val eyeBox = radius * 0.45f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
                 lineTo(eyeBox, 0f)
@@ -251,9 +251,9 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(eyePath, eyeFillPaint)
             canvas.drawPath(eyePath, eyeOuterPaint)
 
-            // Blue Pupil & White Center Glint
-            canvas.drawCircle(0f, 0f, radius * 0.22f, eyePupilPaint)
-            canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
+            // Blue Pupil & White Core Glint
+            canvas.drawCircle(0f, 0f, radius * 0.20f, eyePupilPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.07f, eyeCorePaint)
 
             canvas.restore()
         }
@@ -298,8 +298,14 @@ class FloatingCompanionService : Service() {
 
         if (isAlternateForm) {
             container.background = null
+            container.setPadding(0, 0, 0, 0)
+            charParams.width = (110 * density).toInt()
+            charParams.height = (110 * density).toInt()
+            safeUpdateViewLayout(container, charParams)
+
             img.setImageDrawable(starburstDrawable)
             startStarburstAnimation()
+
             statusTag?.setTextColor(Color.parseColor("#00FFFF"))
             statusTag?.setBackground(GradientDrawable().apply {
                 setColor(Color.parseColor("#0A0E17"))
@@ -308,13 +314,19 @@ class FloatingCompanionService : Service() {
             })
             statusTag?.text = "CAPRI // OVERDRIVE"
         } else {
-            stopStarburstAnimation()
             container.background = ContextCompat.getDrawable(this, R.drawable.cyberpunk_border)
+            container.setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
+            charParams.width = (160 * density).toInt()
+            charParams.height = (110 * density).toInt()
+            safeUpdateViewLayout(container, charParams)
+
+            stopStarburstAnimation()
             img.setImageResource(R.drawable.capri_closed)
             statusTag?.setTextColor(Color.parseColor("#FFCC00"))
             statusTag?.setBackgroundColor(Color.parseColor("#0A0E17"))
             statusTag?.text = "CAPRI // DORMANT"
         }
+        repositionChat()
     }
 
     private fun createCharacterContainer() {
@@ -807,8 +819,8 @@ class FloatingCompanionService : Service() {
         val screenH = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
 
-        val charW = (160 * density).toInt()
-        val charH = (110 * density).toInt()
+        val charW = charParams.width
+        val charH = charParams.height
         val centerX = charParams.x + charW / 2
         val centerY = charParams.y + charH / 2
 
