@@ -892,16 +892,18 @@ class FloatingCompanionService : Service() {
 
     private fun playSpotify(songQuery: String) {
         try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
-            val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY)
-            
-            am.dispatchMediaKeyEvent(downEvent)
-            am.dispatchMediaKeyEvent(upEvent)
-
-            showDialogue("TALKING", "> you: Play $songQuery", "Toggled your background audio, D.")
+            // Use Spotify search intent so it actually opens/searches for the requested song
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$songQuery")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            showDialogue("TALKING", "> you: Play $songQuery", "Firing up '$songQuery' on Spotify for you.")
         } catch (_: Exception) {
-            showDialogue("DORMANT", null, "Couldn't hook into the audio stream, choom.")
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$songQuery")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(webIntent)
+            showDialogue("TALKING", "> you: Play $songQuery", "Opening Spotify search for '$songQuery'.")
         }
     }
 
@@ -914,7 +916,7 @@ class FloatingCompanionService : Service() {
             am.dispatchMediaKeyEvent(downEvent)
             am.dispatchMediaKeyEvent(upEvent)
 
-            showDialogue("TALKING", "> you: Stop music", "Cut the audio stream, D.")
+            showDialogue("TALKING", "> you: Turn off music", "Cut the audio stream, D.")
         } catch (_: Exception) {
             showDialogue("DORMANT", null, "Couldn't stop the audio, choom.")
         }
@@ -930,29 +932,34 @@ class FloatingCompanionService : Service() {
 
         val lower = message.lowercase()
         
-        // Stop / Pause music command
-        if (lower.contains("stop") || lower.contains("pause") || lower.contains("shut up")) {
+        // Stop / Turn off music command (expanded to catch "off", "stop", "pause", "shut")
+        if (lower.contains("stop") || lower.contains("pause") || lower.contains("off") || lower.contains("shut")) {
             history.add("user" to message)
             stopSpotify()
             return
         }
 
-        // Play music command
+        // Play specific music command (extracts the actual search terms after "play")
         if (lower.contains("play") || lower.contains("spotify")) {
-            history.add("user" to message)
+            history.add("user" to message.trim())
             val query = if (lower.contains("play")) {
-                lower.substringAfter("play").trim()
+                message.substringAfter("play", "").trim()
+            } else {
+                ""
+            }
+            val cleanQuery = if (query.isNotEmpty() && query != "spotify" && query != "music" && query != "some music") {
+                query
             } else {
                 "cyberpunk"
             }
-            playSpotify(if (query.isNotEmpty()) query else "cyberpunk")
+            playSpotify(cleanQuery)
             return
         }
 
         // Call command
         if (lower.contains("call")) {
             history.add("user" to message)
-            val query = lower.substringAfter("call").trim()
+            val query = message.substringAfter("call", "").trim()
             openDialer(query)
             return
         }
