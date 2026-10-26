@@ -11,7 +11,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://spotify.jfrog.io/artifactory/spotify-android-sdk-3' }
+        maven {
+            url 'https://spotify.jfrog.io/artifactory/spotify-android-sdk-3'
+            content {
+                includeGroup "com.spotify.android"
+            }
+        }
     }
 }
 
