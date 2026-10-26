@@ -141,8 +141,12 @@ class MainActivity : Activity() {
 
     private fun tryStartCapriService() {
         if (Settings.canDrawOverlays(this)) {
-            val serviceIntent = Intent(this, FloatingCompanionService::class.java)
-            startForegroundService(serviceIntent)
+            try {
+                val serviceIntent = Intent(this, FloatingCompanionService::class.java)
+                startService(serviceIntent)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to start service: ${e.message}")
+            }
         }
     }
 
