@@ -1,3 +1,4 @@
+
 package com.example.caprimobile
 
 import android.app.Activity
@@ -6,6 +7,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -26,9 +28,11 @@ class MainActivity : Activity() {
 
     private lateinit var overlayButton: Button
     private lateinit var notificationButton: Button
+    private lateinit var spawnButton: Button
 
     private val CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val REDIRECT_URI = "com.example.caprimobile://callback"
+
     private var spotifyAppRemote: SpotifyAppRemote? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,94 +63,125 @@ class MainActivity : Activity() {
             setTextColor(Color.LTGRAY)
         }
 
-        root.addView(
-            title,
-            layoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(50)
-            )
-        )
+        root.addView(title, layoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
+        ))
 
-        root.addView(
-            subtitle,
-            layoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(42)
-            )
-        )
+        root.addView(subtitle, layoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(42)
+        ))
 
         overlayButton = createButton("ALLOW FLOATING OVERLAY") {
             openOverlaySettings()
         }
 
         notificationButton = createButton("ALLOW NOTIFICATION ACCESS") {
-            startActivity(
-                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            )
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+
+        spawnButton = createButton("SPAWN CAPRI") {
+            spawnCapri()
         }
 
         root.addView(overlayButton, buttonParams())
         root.addView(notificationButton, buttonParams())
+        root.addView(spawnButton, buttonParams())
 
         val note = TextView(this).apply {
-            text = "Enable permissions below to let Capri work."
+            text = "Enable floating overlay permission, then spawn Capri."
             textSize = 14f
             setTextColor(Color.GRAY)
             gravity = Gravity.CENTER
             setPadding(0, dp(18), 0, dp(8))
         }
 
-        root.addView(
-            note,
-            layoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
+        root.addView(note, layoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
 
         setContentView(root)
         refreshPermissionStatus()
-        tryStartCapriService()
     }
 
     override fun onStart() {
         super.onStart()
+
         val connectionParams = ConnectionParams.Builder(CLIENT_ID)
             .setRedirectUri(REDIRECT_URI)
             .showAuthView(true)
             .build()
 
-        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
-            override fun onConnected(appRemote: SpotifyAppRemote) {
-                spotifyAppRemote = appRemote
-                connected()
-            }
+        try {
+            SpotifyAppRemote.connect(
+                this,
+                connectionParams,
+                object : Connector.ConnectionListener {
+                    override fun onConnected(appRemote: SpotifyAppRemote) {
+                        spotifyAppRemote = appRemote
+                        connected()
+                    }
 
-            override fun onFailure(throwable: Throwable) {
-                Log.e("MainActivity", "Connection failed: ${throwable.message}", throwable)
-            }
-        })
-    }
-
-    private fun connected() {
-        spotifyAppRemote?.playerApi?.play("spotify:track:7qiZfU4dY1lWllzX7mPBI3")
-    }
-
-    override fun onStop() {
-        super.onStop()
-        spotifyAppRemote?.let {
-            SpotifyAppRemote.disconnect(it)
+                    override fun onFailure(throwable: Throwable) {
+                        Log.e(
+                            "MainActivity",
+                            "Spotify connection failed",
+                            throwable
+                        )
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Spotify startup failed", e)
         }
     }
 
-    private fun tryStartCapriService() {
-        if (Settings.canDrawOverlays(this)) {
+    private fun connected() {
+        try {
+            spotifyAppRemote?.playerApi
+                ?.play("spotify:track:7qiZfU4dY1lWllzX7mPBI3")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Spotify playback failed", e)
+        }
+    }
+
+    override fun onStop() {
+        spotifyAppRemote?.let {
             try {
-                val serviceIntent = Intent(this, FloatingCompanionService::class.java)
-                startService(serviceIntent)
+                SpotifyAppRemote.disconnect(it)
             } catch (e: Exception) {
-                Log.e("MainActivity", "Failed to start service: ${e.message}")
+                Log.e("MainActivity", "Spotify disconnect failed", e)
             }
+        }
+        spotifyAppRemote = null
+        super.onStop()
+    }
+
+    private fun spawnCapri() {
+        if (!Settings.canDrawOverlays(this)) {
+            openOverlaySettings()
+            return
+        }
+
+        if (FloatingCompanionService.isRunning) {
+            refreshPermissionStatus()
+            return
+        }
+
+        try {
+            val serviceIntent = Intent(
+                this,
+                FloatingCompanionService::class.java
+            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to spawn Capri", e)
         }
     }
 
@@ -207,6 +242,9 @@ class MainActivity : Activity() {
             } else {
                 "ALLOW NOTIFICATION ACCESS"
             }
+
+        spawnButton.isEnabled = Settings.canDrawOverlays(this)
+        spawnButton.alpha = if (spawnButton.isEnabled) 1f else 0.5f
     }
 
     private fun isNotificationAccessEnabled(): Boolean {
@@ -223,10 +261,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-
         if (::overlayButton.isInitialized) {
             refreshPermissionStatus()
-            tryStartCapriService()
         }
     }
 
