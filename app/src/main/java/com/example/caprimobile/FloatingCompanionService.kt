@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
@@ -73,7 +74,6 @@ class FloatingCompanionService : Service() {
     private var longPressStart = 0L
     private var dismissed = false
     private var busy = false
-    private var movedDuringTouch = false
 
     private var fadeRunnable: Runnable? = null
     private var typingRunnable: Runnable? = null
@@ -140,10 +140,8 @@ class FloatingCompanionService : Service() {
 
         val jsonBody = JSONObject().apply {
             put("model", "openrouter/free")
-            
             val messagesArray = JSONArray()
             messagesArray.put(JSONObject().put("role", "system").put("content", dynamicPersonality))
-            
             synchronized(history) {
                 history.takeLast(10).forEach { (role, content) ->
                     messagesArray.put(JSONObject().put("role", role).put("content", content))
@@ -428,12 +426,14 @@ class FloatingCompanionService : Service() {
             layoutParams = textParams
         }
 
+        // Guaranteed visibility with explicit styling and min height
         val dialogue = TextView(this).apply {
             text = "Online."
             textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
             includeFontPadding = false
+            minHeight = (20 * density).toInt()
             layoutParams = textParams
         }
 
@@ -472,7 +472,7 @@ class FloatingCompanionService : Service() {
             text = "SEND"
             textSize = 11f
             letterSpacing = 0.12f
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
             setPadding(4, 4, 4, 4)
             setOnClickListener { submitMessage() }
@@ -628,6 +628,7 @@ class FloatingCompanionService : Service() {
         val targetText = botMsg ?: ""
         dialogueView.text = ""
         dialogueView.requestLayout()
+        panel.requestLayout()
         repositionChat()
 
         var charIndex = 0
@@ -715,14 +716,14 @@ class FloatingCompanionService : Service() {
                         setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
                     }
 
-                    safeUpdateViewLayout(panel, charParams)
+                    safeUpdateViewLayout(panel, chatParams)
 
                     if (index == steps.lastIndex) {
                         panel.alpha = 0f
                         panel.visibility = View.GONE
                         charParams.x = originalX
                         charParams.y = originalY
-                        safeUpdateViewLayout(panel, charParams)
+                        safeUpdateViewLayout(panel, chatParams)
                         statusTag?.text = "CAPRI // DORMANT"
                         stopMouthAnimation()
                     }
@@ -734,7 +735,7 @@ class FloatingCompanionService : Service() {
     private fun openKeyboard() {
         val input = chatInput ?: return
         val panel = chatWindow ?: return
-        if (dismissed || busy) return
+        if (dismissed) return
 
         resetIdleTimer()
         val density = resources.displayMetrics.density
