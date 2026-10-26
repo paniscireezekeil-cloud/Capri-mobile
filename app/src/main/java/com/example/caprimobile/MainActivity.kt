@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Cyberpunk Dark Root Layout
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#080C14"))
@@ -35,6 +36,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        // Title Header
         val title = TextView(this).apply {
             text = "CAPRI // OS"
             textSize = 22f
@@ -56,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(subtitle)
 
+        // Button Factory for Cyberpunk Aesthetic
         fun createCyberButton(buttonText: String, onClick: () -> Unit): Button {
             return Button(this).apply {
                 text = buttonText
@@ -78,6 +81,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // 1. Overlay Permission Button
         val overlayBtn = createCyberButton("ALLOW FLOATING OVERLAY") {
             if (!Settings.canDrawOverlays(this)) {
                 val intent = Intent(
@@ -91,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(overlayBtn)
 
+        // 2. Usage Stats Permission Button (For App Awareness)
         val usageBtn = createCyberButton("GRANT APP-AWARENESS PERMISSION") {
             if (!hasUsageStatsPermission()) {
                 val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
@@ -101,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(usageBtn)
 
+        // 3. Summon Companion Button
         val summonBtn = createCyberButton("SUMMON CAPRI") {
             if (Settings.canDrawOverlays(this)) {
                 val serviceIntent = Intent(this, FloatingCompanionService::class.java)
@@ -116,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(summonBtn)
 
+        // 4. Dismiss Companion Button
         val dismissBtn = createCyberButton("DISMISS CAPRI") {
             val serviceIntent = Intent(this, FloatingCompanionService::class.java)
             stopService(serviceIntent)
@@ -123,6 +130,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(dismissBtn)
 
+        // Terminal Log Box / Console Preview Header
         val logHeader = TextView(this).apply {
             text = "SYSTEM LOG // TERMINAL"
             textSize = 11f
@@ -132,6 +140,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(logHeader)
 
+        // Terminal Output Screen
         val terminalScroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
