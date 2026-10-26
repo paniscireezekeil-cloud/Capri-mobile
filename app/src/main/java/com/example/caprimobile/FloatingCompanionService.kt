@@ -174,12 +174,12 @@ class FloatingCompanionService : Service() {
         private val darkBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#0A0E17")
             style = Paint.Style.STROKE
-            strokeWidth = 2.5f
+            strokeWidth = 2.0f
         }
         private val eyeOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#00FFFF")
             style = Paint.Style.STROKE
-            strokeWidth = 5f
+            strokeWidth = 4f
         }
         private val eyeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#110A1F")
@@ -199,14 +199,14 @@ class FloatingCompanionService : Service() {
             val h = bounds.height().toFloat()
             val cx = w / 2f
             val cy = h / 2f
-            val radius = w.coerceAtMost(h) * 0.40f
+            val radius = w.coerceAtMost(h) * 0.28f
 
             canvas.save()
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            val primaryPulse = 1.0f + 0.35f * abs(sin(pulsePhase.toDouble())).toFloat()
-            val secondaryPulse = 1.0f + 0.25f * abs(sin((pulsePhase * 1.25f) + 0.8f).toDouble()).toFloat()
+            val primaryPulse = 1.0f + 0.20f * abs(sin(pulsePhase.toDouble())).toFloat()
+            val secondaryPulse = 1.0f + 0.15f * abs(sin((pulsePhase * 1.25f) + 0.8f).toDouble()).toFloat()
 
             for (i in 0 until 8) {
                 canvas.save()
@@ -215,12 +215,12 @@ class FloatingCompanionService : Service() {
                 val currentScale = if (i % 2 == 0) primaryPulse else secondaryPulse
                 
                 val path = Path().apply {
-                    moveTo(0f, -radius * 1.55f * currentScale)
-                    lineTo(radius * 0.42f, -radius * 0.25f)
-                    lineTo(radius * 0.15f, radius * 0.15f)
-                    lineTo(0f, radius * 0.4f)
-                    lineTo(-radius * 0.15f, radius * 0.15f)
-                    lineTo(-radius * 0.42f, -radius * 0.25f)
+                    moveTo(0f, -radius * 1.3f * currentScale)
+                    lineTo(radius * 0.35f, -radius * 0.2f)
+                    lineTo(radius * 0.12f, radius * 0.12f)
+                    lineTo(0f, radius * 0.32f)
+                    lineTo(-radius * 0.12f, radius * 0.12f)
+                    lineTo(-radius * 0.35f, -radius * 0.2f)
                     close()
                 }
                 val paint = if (i % 2 == 0) redPaint else greenPaint
@@ -230,16 +230,16 @@ class FloatingCompanionService : Service() {
             }
 
             val diamondPath = Path().apply {
-                moveTo(0f, -radius * 0.65f)
-                lineTo(radius * 0.65f, 0f)
-                lineTo(0f, radius * 0.65f)
-                lineTo(-radius * 0.65f, 0f)
+                moveTo(0f, -radius * 0.55f)
+                lineTo(radius * 0.55f, 0f)
+                lineTo(0f, radius * 0.55f)
+                lineTo(-radius * 0.55f, 0f)
                 close()
             }
             canvas.drawPath(diamondPath, purplePaint)
             canvas.drawPath(diamondPath, darkBorderPaint)
 
-            val eyeBox = radius * 0.45f
+            val eyeBox = radius * 0.38f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
                 lineTo(eyeBox, 0f)
@@ -250,8 +250,8 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(eyePath, eyeFillPaint)
             canvas.drawPath(eyePath, eyeOuterPaint)
 
-            canvas.drawCircle(0f, 0f, radius * 0.20f, eyePupilPaint)
-            canvas.drawCircle(0f, 0f, radius * 0.07f, eyeCorePaint)
+            canvas.drawCircle(0f, 0f, radius * 0.16f, eyePupilPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.06f, eyeCorePaint)
 
             canvas.restore()
         }
