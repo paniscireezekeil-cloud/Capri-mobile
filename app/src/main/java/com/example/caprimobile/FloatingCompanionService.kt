@@ -404,12 +404,9 @@ class FloatingCompanionService : Service() {
                 (10 * density).toInt(),
                 (8 * density).toInt()
             )
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E60D111A"))
-                cornerRadius = 4 * density
-                setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
-            }
-            elevation = 4f * density
+            // Clean transparent background on the layout container so it doesn't block children
+            setBackgroundColor(Color.TRANSPARENT)
+            elevation = 6f * density
         }
 
         val textParams = LinearLayout.LayoutParams(
@@ -423,17 +420,21 @@ class FloatingCompanionService : Service() {
             text = ""
             textSize = 10f
             setTextColor(Color.parseColor("#AA8844"))
+            setBackgroundColor(Color.parseColor("#0F141F"))
+            setPadding((6 * density).toInt(), (4 * density).toInt(), (6 * density).toInt(), (4 * density).toInt())
             layoutParams = textParams
         }
 
-        // Guaranteed visibility with explicit styling and min height
+        // Background set directly on the TextView so letters are guaranteed to render on top with solid background
         val dialogue = TextView(this).apply {
             text = "Online."
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#FFCC00"))
             includeFontPadding = false
-            minHeight = (20 * density).toInt()
+            setBackgroundColor(Color.parseColor("#0F141F"))
+            setPadding((8 * density).toInt(), (6 * density).toInt(), (8 * density).toInt(), (6 * density).toInt())
+            minHeight = (24 * density).toInt()
             layoutParams = textParams
         }
 
@@ -626,7 +627,7 @@ class FloatingCompanionService : Service() {
         }
 
         val targetText = botMsg ?: ""
-        dialogueView.text = ""
+        dialogueView.text = targetText
         dialogueView.requestLayout()
         panel.requestLayout()
         repositionChat()
@@ -639,11 +640,6 @@ class FloatingCompanionService : Service() {
                 if (generation != dialogueGeneration || dismissed) return
                 if (charIndex < targetText.length) {
                     val currentChar = targetText[charIndex]
-                    dialogueView.append(currentChar.toString())
-                    
-                    dialogueView.invalidate()
-                    panel.requestLayout()
-                    
                     charIndex++
 
                     if (!currentChar.isWhitespace()) {
@@ -716,14 +712,14 @@ class FloatingCompanionService : Service() {
                         setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
                     }
 
-                    safeUpdateViewLayout(panel, chatParams)
+                    safeUpdateViewLayout(panel, charParams)
 
                     if (index == steps.lastIndex) {
                         panel.alpha = 0f
                         panel.visibility = View.GONE
                         charParams.x = originalX
                         charParams.y = originalY
-                        safeUpdateViewLayout(panel, chatParams)
+                        safeUpdateViewLayout(panel, charParams)
                         statusTag?.text = "CAPRI // DORMANT"
                         stopMouthAnimation()
                     }
@@ -735,9 +731,6 @@ class FloatingCompanionService : Service() {
     private fun openKeyboard() {
         val input = chatInput ?: return
         val panel = chatWindow ?: return
-        if (dismissed) return
-
-        resetIdleTimer()
         val density = resources.displayMetrics.density
 
         fadeRunnable?.let { handler.removeCallbacks(it) }
@@ -751,11 +744,7 @@ class FloatingCompanionService : Service() {
         panel.animate().cancel()
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
-        panel.background = GradientDrawable().apply {
-            setColor(Color.parseColor("#E60D111A"))
-            cornerRadius = 4 * density
-            setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
-        }
+        panel.setBackgroundColor(Color.TRANSPARENT)
 
         chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         safeUpdateViewLayout(panel, chatParams)
