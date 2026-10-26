@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
@@ -51,30 +52,15 @@ class MainActivity : Activity() {
             setTextColor(Color.LTGRAY)
         }
 
-        root.addView(
-            title,
-            layoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(50)
-            )
-        )
-
-        root.addView(
-            subtitle,
-            layoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(42)
-            )
-        )
+        root.addView(title, layoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
+        root.addView(subtitle, layoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
 
         overlayButton = createButton("ALLOW FLOATING OVERLAY") {
             openOverlaySettings()
         }
 
         notificationButton = createButton("ALLOW NOTIFICATION ACCESS") {
-            startActivity(
-                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            )
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
         root.addView(overlayButton, buttonParams())
@@ -88,22 +74,13 @@ class MainActivity : Activity() {
             setPadding(0, dp(18), 0, dp(8))
         }
 
-        root.addView(
-            note,
-            layoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
+        root.addView(note, layoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         setContentView(root)
         refreshPermissionStatus()
     }
 
-    private fun createButton(
-        label: String,
-        action: () -> Unit
-    ): Button {
+    private fun createButton(label: String, action: () -> Unit): Button {
         return Button(this).apply {
             text = label
             textSize = 14f
@@ -120,10 +97,7 @@ class MainActivity : Activity() {
     }
 
     private fun buttonParams() =
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(54)
-        ).apply {
+        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
             topMargin = dp(9)
         }
 
@@ -144,41 +118,43 @@ class MainActivity : Activity() {
     private fun refreshPermissionStatus() {
         if (!::overlayButton.isInitialized) return
 
-        overlayButton.text =
-            if (Settings.canDrawOverlays(this)) {
-                "FLOATING OVERLAY: ENABLED"
-            } else {
-                "ALLOW FLOATING OVERLAY"
-            }
+        val hasOverlay = Settings.canDrawOverlays(this)
+        overlayButton.text = if (hasOverlay) {
+            "FLOATING OVERLAY: ENABLED"
+        } else {
+            "ALLOW FLOATING OVERLAY"
+        }
 
-        notificationButton.text =
-            if (isNotificationAccessEnabled()) {
-                "NOTIFICATION ACCESS: ENABLED"
+        notificationButton.text = if (isNotificationAccessEnabled()) {
+            "NOTIFICATION ACCESS: ENABLED"
+        } else {
+            "ALLOW NOTIFICATION ACCESS"
+        }
+
+        // Automatically start service as soon as overlay permission is active and service isn't running
+        if (hasOverlay && !FloatingCompanionService.isRunning) {
+            val serviceIntent = Intent(this, FloatingCompanionService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
             } else {
-                "ALLOW NOTIFICATION ACCESS"
+                startService(serviceIntent)
             }
+        }
     }
 
     private fun isNotificationAccessEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(
-            contentResolver,
-            "enabled_notification_listeners"
-        ) ?: return false
-
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
         return enabled.split(":").any { entry ->
-            ComponentName.unflattenFromString(entry)
-                ?.packageName == packageName
+            ComponentName.unflattenFromString(entry)?.packageName == packageName
         }
     }
 
     override fun onResume() {
         super.onResume()
-
         if (::overlayButton.isInitialized) {
             refreshPermissionStatus()
         }
     }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }
