@@ -13,20 +13,14 @@ class CapriApplication : Application() {
 
         try {
             val firebaseApp = FirebaseApp.initializeApp(this)
-
-            if (firebaseApp == null) {
-                Log.e("CapriAppCheck", "Firebase initialization failed")
-                return
+            if (firebaseApp != null) {
+                FirebaseAppCheck.getInstance(firebaseApp)
+                    .installAppCheckProviderFactory(
+                        DebugAppCheckProviderFactory.getInstance()
+                    )
             }
-
-            FirebaseAppCheck.getInstance(firebaseApp)
-                .installAppCheckProviderFactory(
-                    DebugAppCheckProviderFactory.getInstance()
-                )
-
-            Log.d("CapriAppCheck", "Debug App Check provider installed")
         } catch (e: Exception) {
-            Log.e("CapriAppCheck", "Failed to initialize App Check: ${e.message}", e)
+            Log.e("CapriAppCheck", "Init failed: ${e.message}")
         }
     }
 }
