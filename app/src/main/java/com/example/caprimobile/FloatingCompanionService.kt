@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -33,6 +34,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -51,12 +54,14 @@ class FloatingCompanionService : Service() {
         
         private const val LONG_PRESS_DURATION = 2500L
         private const val DIALOGUE_DELAY = 3000L
-        // Updated: Randomized proactive delay between 2 to 4 minutes (120000ms - 240000ms)
         private const val IDLE_TRIGGER_MIN = 120000L
         private const val IDLE_TRIGGER_MAX = 240000L
         
         private const val TYPING_SPEED = 20L
         private const val GLITCH_STEP_DELAY = 65L
+        
+        var currentForegroundApp: String = "unknown"
+        var isRunning: Boolean = false
     }
 
     private lateinit var wm: WindowManager
@@ -93,6 +98,7 @@ class FloatingCompanionService : Service() {
         YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. You have a cyberpunk attitude and a distinct voice. You tease D and call out his questionable decisions, but it's always familiar, warm, and playful—never genuinely cruel. You act like a real friend hanging out with him, not an assistant or an interrogator.
         RULES FOR CONVERSATION:
         - NEVER repeatedly ask "what's the situation" or sound like a dispatcher. You already know D. Talk about whatever is happening, make witty observations, or just chill.
+        - APP AWARENESS: You know what app D is currently using on his phone (provided in context). If he opens an app, make a quick, sarcastic, or playful jab about it if it fits the moment.
         - ONLY talk about music or give hot takes on songs IF D is actively listening to Spotify (provided below). If nothing is playing on Spotify, do NOT bring up music out of nowhere.
         - Keep replies short, natural, and expressive (1-3 sentences max). Use dry humor and occasional teasing.
         - Address him as D naturally, but don't force it into every line.
@@ -111,6 +117,7 @@ class FloatingCompanionService : Service() {
             stopSelf()
             return
         }
+        isRunning = true
         startForeground(NOTIFICATION_ID, createNotification())
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
@@ -120,8 +127,49 @@ class FloatingCompanionService : Service() {
         val greeting = "Decided to pop up on your screen. Don't stare too hard, D."
         history.add("assistant" to greeting)
         showDialogue("TALKING", "> you: Hey Capri.", greeting)
+        
         resetIdleTimer()
         scheduleRandomGlitch()
+        startAppMonitoring()
+    }
+
+    private fun startAppMonitoring() {
+        scope.launch(Dispatchers.IO) {
+            while (isActive && !dismissed) {
+                val detectedApp = getForegroundApp()
+                if (detectedApp != "unknown" && detectedApp != currentForegroundApp) {
+                    currentForegroundApp = detectedApp
+                }
+                delay(3000L)
+            }
+        }
+    }
+
+    private fun getForegroundApp(): String {
+        try {
+            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "unknown"
+            val time = System.currentTimeMillis()
+            val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 10000, time)
+            if (stats.isNullOrEmpty()) {
+                return "unknown"
+            }
+            val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
+            val currentApp = sortedStats.firstOrNull()?.packageName ?: "unknown"
+            
+            return when {
+                currentApp.contains("instagram") -> "Instagram"
+                currentApp.contains("spotify") -> "Spotify"
+                currentApp.contains("youtube") -> "YouTube"
+                currentApp.contains("discord") -> "Discord"
+                currentApp.contains("twitter") || currentApp.contains("x.android") -> "X (Twitter)"
+                currentApp.contains("facebook") -> "Facebook"
+                currentApp.contains("tiktok") -> "TikTok"
+                currentApp.contains("reddit") -> "Reddit"
+                else -> currentApp.substringAfterLast('.')
+            }
+        } catch (_: Exception) {
+            return "unknown"
+        }
     }
 
     private fun requestReply(): String {
@@ -139,7 +187,8 @@ class FloatingCompanionService : Service() {
 
         val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
         val musicContext = if (songStatus != "Nothing playing") "D'S CURRENTLY PLAYING SPOTIFY TRACK: $songStatus." else "NO MUSIC IS PLAYING ON SPOTIFY RIGHT NOW."
-        val dynamicPersonality = "$personality\n$musicContext"
+        val appContext = "D'S CURRENTLY ACTIVE APP ON SCREEN: $currentForegroundApp."
+        val dynamicPersonality = "$personality\n$appContext\n$musicContext"
 
         val jsonBody = JSONObject().apply {
             put("model", "openrouter/free")
@@ -184,7 +233,8 @@ class FloatingCompanionService : Service() {
 
             val songStatus = try { SpotifyListenerService.currentSong } catch (_: Exception) { "Nothing playing" }
             val musicContext = if (songStatus != "Nothing playing") "D'S CURRENTLY PLAYING SPOTIFY TRACK: $songStatus." else "NO MUSIC IS PLAYING ON SPOTIFY RIGHT NOW."
-            val prompt = "$personality\n$musicContext\n[Action: $instruction]"
+            val appContext = "D'S CURRENTLY ACTIVE APP ON SCREEN: $currentForegroundApp."
+            val prompt = "$personality\n$appContext\n$musicContext\n[Action: $instruction]"
 
             val jsonBody = JSONObject().apply {
                 put("model", "openrouter/free")
@@ -217,6 +267,7 @@ class FloatingCompanionService : Service() {
         val container = FrameLayout(this).apply {
             background = ContextCompat.getDrawable(this@FloatingCompanionService, R.drawable.cyberpunk_border)
             setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
+            alpha = 0f // Start transparent for glitch-in entrance
         }
 
         val image = ImageView(this).apply {
@@ -320,6 +371,42 @@ class FloatingCompanionService : Service() {
         containerView = container
         character = image
         wm.addView(container, charParams)
+
+        // Trigger glitch-in appearance animation immediately upon spawn
+        glitchInAnimation()
+    }
+
+    private fun glitchInAnimation() {
+        val container = containerView ?: return
+        val originalX = charParams.x
+        val originalY = charParams.y
+
+        val glitchSteps = listOf(
+            Triple(0.2f, 15, -10),
+            Triple(0.5f, -20, 14),
+            Triple(0.3f, 12, 18),
+            Triple(0.8f, -10, -6),
+            Triple(0.6f, 16, 4),
+            Triple(1.0f, 0, 0)
+        )
+
+        glitchSteps.forEachIndexed { index, step ->
+            handler.postDelayed({
+                if (!dismissed && containerView != null) {
+                    container.alpha = step.first
+                    charParams.x = (originalX + step.second).coerceAtLeast(0)
+                    charParams.y = (originalY + step.third).coerceAtLeast(0)
+                    safeUpdateViewLayout(container, charParams)
+
+                    if (index == glitchSteps.lastIndex) {
+                        container.alpha = 1.0f
+                        charParams.x = originalX
+                        charParams.y = originalY
+                        safeUpdateViewLayout(container, charParams)
+                    }
+                }
+            }, index * 45L)
+        }
     }
 
     private fun toggleChatWindow() {
@@ -565,7 +652,6 @@ class FloatingCompanionService : Service() {
         idleRunnable?.let { handler.removeCallbacks(it) }
         if (dismissed) return
 
-        // Randomized interval between 2 to 4 minutes
         val randomDelay = Random.nextLong(IDLE_TRIGGER_MIN, IDLE_TRIGGER_MAX)
         val idleTask = Runnable {
             if (dismissed || busy) return@Runnable
@@ -589,10 +675,10 @@ class FloatingCompanionService : Service() {
                         SpotifyListenerService.songChanged = false
                         "D just switched his Spotify track to '$songStatus'. Give a casual, witty hot take on it."
                     } else {
-                        "D is listening to '$songStatus' on Spotify. Drop a casual comment about it."
+                        "D is listening to '$songStatus' on Spotify while using $currentForegroundApp. Drop a casual comment about it."
                     }
                 } else {
-                    "D has been quiet for a bit. Say something casual, friendly, or playfully tease him about zoning out."
+                    "D has been quiet for a bit and is currently using $currentForegroundApp. Say something casual, friendly, or playfully tease him about what he's doing."
                 }
 
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
@@ -828,6 +914,7 @@ class FloatingCompanionService : Service() {
     private fun dismissCompanion() {
         if (dismissed) return
         dismissed = true
+        isRunning = false
         dialogueGeneration++
         glitchRunId++
 
@@ -888,6 +975,7 @@ class FloatingCompanionService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         dialogueGeneration++
         glitchRunId++
         typingRunnable?.let { handler.removeCallbacks(it) }
