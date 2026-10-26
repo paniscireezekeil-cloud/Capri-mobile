@@ -396,7 +396,6 @@ class FloatingCompanionService : Service() {
         val density = resources.displayMetrics.density
         val width = (240 * density).toInt()
 
-        // Comic-style Visual Novel Speech Bubble Panel
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
@@ -406,7 +405,7 @@ class FloatingCompanionService : Service() {
                 (10 * density).toInt()
             )
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF080C14")) // Solid dark comic box background
+                setColor(Color.parseColor("#FF080C14"))
                 cornerRadius = 4 * density
                 setStroke((2 * density).toInt(), Color.parseColor("#FFCC00"))
             }
@@ -420,7 +419,6 @@ class FloatingCompanionService : Service() {
             bottomMargin = (6 * density).toInt()
         }
 
-        // Speaker label matching the reference style ("CAPRI >")
         val speakerLabel = TextView(this).apply {
             text = "CAPRI >"
             textSize = 10f
@@ -439,7 +437,6 @@ class FloatingCompanionService : Service() {
             layoutParams = textParams
         }
 
-        // Dialogue text view with solid background framing to guarantee crisp visibility
         val dialogue = TextView(this).apply {
             text = "Online."
             textSize = 12f
@@ -512,16 +509,26 @@ class FloatingCompanionService : Service() {
         panel.addView(dialogue)
         panel.addView(row)
 
+        // FLAG_NOT_TOUCH_MODAL + FLAG_WATCH_OUTSIDE_TOUCH allows touches outside the box to pass through and dismisses on outside tap
         chatParams = WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 200
             y = 300
+        }
+
+        panel.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                toggleChatWindow()
+                true
+            } else {
+                false
+            }
         }
 
         userQueryText = userQuery
@@ -642,29 +649,34 @@ class FloatingCompanionService : Service() {
         }
 
         val targetText = botMsg ?: ""
-        dialogueView.text = targetText
+        dialogueView.text = ""
         dialogueView.requestLayout()
         panel.requestLayout()
         repositionChat()
 
         var charIndex = 0
-        var mouthState = false
+        var isWordBoundary = true
 
         val typingTask = object : Runnable {
             override fun run() {
                 if (generation != dialogueGeneration || dismissed) return
                 if (charIndex < targetText.length) {
                     val currentChar = targetText[charIndex]
-                    charIndex++
+                    dialogueView.append(currentChar.toString())
+                    
+                    dialogueView.invalidate()
+                    panel.requestLayout()
 
-                    if (!currentChar.isWhitespace()) {
-                        mouthState = !mouthState
-                        setMouthOpen(mouthState)
-                    } else {
+                    // Mouth flaps per word boundary instead of every single letter
+                    if (!currentChar.isWhitespace() && isWordBoundary) {
+                        setMouthOpen(true)
+                        isWordBoundary = false
+                    } else if (currentChar.isWhitespace()) {
                         setMouthOpen(false)
-                        mouthState = false
+                        isWordBoundary = true
                     }
 
+                    charIndex++
                     typingRunnable = this
                     handler.postDelayed(this, TYPING_SPEED)
                 } else {
@@ -674,6 +686,7 @@ class FloatingCompanionService : Service() {
                     dialogueView.invalidate()
                     panel.requestLayout()
 
+                    // Wait 3 full seconds after typing completes before triggering the glitch out
                     val timer = Runnable {
                         if (generation == dialogueGeneration && !dismissed) {
                             glitchDialogue()
@@ -727,14 +740,14 @@ class FloatingCompanionService : Service() {
                         setStroke((2 * density).toInt().coerceAtLeast(1), Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)))
                     }
 
-                    safeUpdateViewLayout(panel, chatParams)
+                    safeUpdateViewLayout(panel, charParams)
 
                     if (index == steps.lastIndex) {
                         panel.alpha = 0f
                         panel.visibility = View.GONE
                         charParams.x = originalX
                         charParams.y = originalY
-                        safeUpdateViewLayout(panel, chatParams)
+                        safeUpdateViewLayout(panel, charParams)
                         statusTag?.text = "CAPRI // DORMANT"
                         stopMouthAnimation()
                     }
@@ -748,7 +761,7 @@ class FloatingCompanionService : Service() {
         panel.alpha = 1f
         panel.visibility = View.VISIBLE
 
-        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        chatParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         safeUpdateViewLayout(panel, chatParams)
 
         chatInput?.requestFocus()
