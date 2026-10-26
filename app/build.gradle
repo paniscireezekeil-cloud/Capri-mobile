@@ -34,13 +34,19 @@ android {
     }
 }
 
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
 dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
 
     // Local Spotify SDK integration
-    implementation files('libs/spotify-app-remote-release-0.8.0.aar')
+    implementation(name: 'spotify-app-remote-release-0.8.0', ext: 'aar')
     implementation 'com.google.code.gson:gson:2.10.1'
 
     // Firebase BOM & App Check
