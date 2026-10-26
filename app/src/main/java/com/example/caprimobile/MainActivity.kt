@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+
     private fun connected() {
         spotifyAppRemote?.playerApi?.play("spotify:track:7qiZfU4dY1lWllzX7mPBI3")
     }
