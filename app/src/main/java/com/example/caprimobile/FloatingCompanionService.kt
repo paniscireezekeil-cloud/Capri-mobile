@@ -203,15 +203,16 @@ class FloatingCompanionService : Service() {
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            // Larger pulse factor for bigger pulsing spikes
-            val pulse = 1.0f + 0.22f * abs(sin(pulsePhase.toDouble())).toFloat()
-
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
+                // Sequential wave/pulse rotating counter-clockwise (to the left), starting at green spikes (odd indices)
+                val phaseOffset = if (i % 2 != 0) 0.0f else Math.PI.toFloat()
+                val spikePulse = 1.0f + 0.25f * abs(sin((pulsePhase - phaseOffset).toDouble())).toFloat()
+                
                 val path = Path().apply {
-                    moveTo(0f, -radius * 1.35f * pulse) // Spikes reach further out during pulse
+                    moveTo(0f, -radius * 1.1f * spikePulse)
                     lineTo(radius * 0.25f, -radius * 0.35f)
                     lineTo(radius * 0.20f, radius * 0.20f)
                     lineTo(0f, radius * 0.45f)
@@ -270,9 +271,9 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    // Slower rotation speed and gentler pulse rate
+                    // Slower rotation speed with smooth wave pulsing
                     starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 1.0f) % 360f
-                    starburstDrawable.pulsePhase += 0.045f
+                    starburstDrawable.pulsePhase += 0.055f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
                     handler.postDelayed(this, 16L)
