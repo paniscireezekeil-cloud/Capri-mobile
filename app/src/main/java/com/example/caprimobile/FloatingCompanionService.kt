@@ -210,16 +210,16 @@ class FloatingCompanionService : Service() {
                 val spikeAngleIndex = (8 - i) % 8
                 val phaseOffset = spikeAngleIndex * (Math.PI.toFloat() / 4f)
                 
-                // Smaller baseline length (0.75f) with wider pulse amplitude (up to 1.35f) to keep max reach identical
-                val spikeScale = 0.75f + 0.60f * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
+                // Balanced baseline size with full dynamic pulsing range
+                val spikeScale = 0.90f + 0.45f * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
                 
                 val path = Path().apply {
                     moveTo(0f, -radius * spikeScale)
-                    lineTo(radius * 0.22f, -radius * 0.30f)
-                    lineTo(radius * 0.18f, radius * 0.18f)
-                    lineTo(0f, radius * 0.40f)
-                    lineTo(-radius * 0.18f, radius * 0.18f)
-                    lineTo(-radius * 0.22f, -radius * 0.30f)
+                    lineTo(radius * 0.25f, -radius * 0.35f)
+                    lineTo(radius * 0.20f, radius * 0.20f)
+                    lineTo(0f, radius * 0.45f)
+                    lineTo(-radius * 0.20f, radius * 0.20f)
+                    lineTo(-radius * 0.25f, -radius * 0.35f)
                     close()
                 }
 
@@ -229,19 +229,19 @@ class FloatingCompanionService : Service() {
                 canvas.restore()
             }
 
-            // Enlarged central core diamond
+            // Smaller central core square/diamond
             val corePath = Path().apply {
-                moveTo(0f, -radius * 0.88f)
-                lineTo(radius * 0.88f, 0f)
-                lineTo(0f, radius * 0.88f)
-                lineTo(-radius * 0.88f, 0f)
+                moveTo(0f, -radius * 0.55f)
+                lineTo(radius * 0.55f, 0f)
+                lineTo(0f, radius * 0.55f)
+                lineTo(-radius * 0.55f, 0f)
                 close()
             }
             canvas.drawPath(corePath, purplePaint)
             canvas.drawPath(corePath, outlinePaint)
 
-            // Enlarged inner eye core elements
-            val eyeBox = radius * 0.52f
+            // Inner eye core elements (keeping circle/eye sized properly)
+            val eyeBox = radius * 0.42f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
                 lineTo(eyeBox, 0f)
@@ -252,8 +252,8 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(eyePath, eyeFillPaint)
             canvas.drawPath(eyePath, eyeOuterPaint)
 
-            canvas.drawCircle(0f, 0f, radius * 0.22f, eyePupilPaint)
-            canvas.drawCircle(0f, 0f, radius * 0.10f, eyeCorePaint)
+            canvas.drawCircle(0f, 0f, radius * 0.18f, eyePupilPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
 
             canvas.restore()
         }
