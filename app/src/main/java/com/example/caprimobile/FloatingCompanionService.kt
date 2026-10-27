@@ -113,9 +113,11 @@ class FloatingCompanionService : Service() {
     private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
-        You are Capri, a loyal digital companion and close friend to D. 
+        You are Capri, a digital companion and close friend to D. 
         YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. 
-        CRITICAL RULE: Keep your replies extremely short, punchy, and brief (maximum 1 to 2 short sentences). Never ramble.
+        RULES: 
+        1. Keep replies extremely short, punchy, and brief (1-2 short sentences max). Never ramble.
+        2. If D asks you to play a song, music, or artist, you can trigger Spotify playback. In your JSON response, you can append a command format if needed, but always reply in character.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -212,7 +214,6 @@ class FloatingCompanionService : Service() {
                 val spikeAngleIndex = (8 - i) % 8
                 val phaseOffset = spikeAngleIndex * (Math.PI.toFloat() / 4f)
                 
-                // Red spikes are slightly larger; green spikes are only a little smaller and clearly noticeable
                 val baseScale = if (isRed) 1.05f else 0.92f
                 val pulseAmplitude = 0.40f
                 val spikeScale = baseScale + pulseAmplitude * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
@@ -562,6 +563,30 @@ class FloatingCompanionService : Service() {
                 override fun onFailure(throwable: Throwable) {}
             })
         } catch (_: Exception) {}
+    }
+
+    private fun handleSpotifyCommand(userMessage: String) {
+        val lower = userMessage.lowercase()
+        val remote = spotifyAppRemote ?: return
+
+        try {
+            if (lower.contains("play")) {
+                val query = lower.substringAfter("play").trim()
+                if (query.isNotEmpty() && query != "music" && query != "song") {
+                    // Try to search/play URI or query via Spotify App Remote
+                    val spotifyUri = "spotify:search:$query"
+                    remote.playerApi.play(spotifyUri)
+                } else {
+                    remote.playerApi.resume()
+                }
+            } else if (lower.contains("pause") || lower.contains("stop")) {
+                remote.playerApi.pause()
+            } else if (lower.contains("skip") || lower.contains("next")) {
+                remote.playerApi.skipNext()
+            }
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Spotify command error: ${e.message}")
+        }
     }
 
     private fun startAppMonitoring() {
@@ -1084,6 +1109,9 @@ class FloatingCompanionService : Service() {
         busy = true
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
+
+        // Handle music commands directly via Spotify Remote API
+        handleSpotifyCommand(message)
 
         scope.launch {
             try {
