@@ -212,8 +212,9 @@ class FloatingCompanionService : Service() {
                 val spikeAngleIndex = (8 - i) % 8
                 val phaseOffset = spikeAngleIndex * (Math.PI.toFloat() / 4f)
                 
-                val baseScale = if (isRed) 1.05f else 0.75f
-                val pulseAmplitude = if (isRed) 0.45f else 0.30f
+                // Red spikes are slightly larger; green spikes are only a little smaller and clearly noticeable
+                val baseScale = if (isRed) 1.05f else 0.92f
+                val pulseAmplitude = 0.40f
                 val spikeScale = baseScale + pulseAmplitude * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
                 
                 val path = Path().apply {
