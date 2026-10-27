@@ -73,6 +73,7 @@ class FloatingCompanionService : Service() {
         private const val GLITCH_STEP_DELAY = 65L
         
         var currentForegroundApp: String = "unknown"
+        var currentSpotifyTrack: String = "nothing"
         var isRunning: Boolean = false
     }
 
@@ -159,39 +160,30 @@ class FloatingCompanionService : Service() {
         var rotationAngle = 0f
         var pulsePhase = 0f
 
-        private val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E60039")
+        private val cyanPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#00E5FF")
             style = Paint.Style.FILL
         }
-        private val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#00E676")
+        private val pinkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FF007F")
             style = Paint.Style.FILL
         }
-        private val purplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#7C4DFF")
+        private val yellowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FFEA00")
             style = Paint.Style.FILL
         }
-        private val darkBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#0A0E17")
-            style = Paint.Style.STROKE
-            strokeWidth = 2.0f
-        }
-        private val eyeOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#00FFFF")
-            style = Paint.Style.STROKE
-            strokeWidth = 4f
-        }
-        private val eyeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#110A1F")
-            style = Paint.Style.FILL
-        }
-        private val eyePupilPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        private val blueCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#2979FF")
             style = Paint.Style.FILL
         }
-        private val eyeCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        private val whiteCenterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#FFFFFF")
             style = Paint.Style.FILL
+        }
+        private val darkOutlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#0A0E17")
+            style = Paint.Style.STROKE
+            strokeWidth = 2.5f
         }
 
         override fun draw(canvas: Canvas) {
@@ -199,67 +191,61 @@ class FloatingCompanionService : Service() {
             val h = bounds.height().toFloat()
             val cx = w / 2f
             val cy = h / 2f
-            val radius = w.coerceAtMost(h) * 0.28f
+            val radius = w.coerceAtMost(h) * 0.35f
 
             canvas.save()
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            val primaryPulse = 1.0f + 0.20f * abs(sin(pulsePhase.toDouble())).toFloat()
-            val secondaryPulse = 1.0f + 0.15f * abs(sin((pulsePhase * 1.25f) + 0.8f).toDouble()).toFloat()
+            val pulseScale = 1.0f + 0.12f * abs(sin(pulsePhase.toDouble())).toFloat()
 
+            // Draw multi-petal starburst shards (resembling the vibrant design from video)
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
-                val currentScale = if (i % 2 == 0) primaryPulse else secondaryPulse
-                
-                val path = Path().apply {
-                    moveTo(0f, -radius * 1.3f * currentScale)
-                    lineTo(radius * 0.35f, -radius * 0.2f)
-                    lineTo(radius * 0.12f, radius * 0.12f)
-                    lineTo(0f, radius * 0.32f)
-                    lineTo(-radius * 0.12f, radius * 0.12f)
-                    lineTo(-radius * 0.35f, -radius * 0.2f)
+                val shardPath = Path().apply {
+                    moveTo(0f, -radius * 1.35f * pulseScale)
+                    lineTo(radius * 0.38f, -radius * 0.25f)
+                    lineTo(0f, radius * 0.15f)
+                    lineTo(-radius * 0.38f, -radius * 0.25f)
                     close()
                 }
-                val paint = if (i % 2 == 0) redPaint else greenPaint
-                canvas.drawPath(path, paint)
-                canvas.drawPath(path, darkBorderPaint)
+
+                val paint = when (i % 3) {
+                    0 -> cyanPaint
+                    1 -> pinkPaint
+                    else -> yellowPaint
+                }
+
+                canvas.drawPath(shardPath, paint)
+                canvas.drawPath(shardPath, darkOutlinePaint)
                 canvas.restore()
             }
 
-            val diamondPath = Path().apply {
-                moveTo(0f, -radius * 0.55f)
-                lineTo(radius * 0.55f, 0f)
-                lineTo(0f, radius * 0.55f)
-                lineTo(-radius * 0.55f, 0f)
+            // Central geometric star core
+            val corePath = Path().apply {
+                moveTo(0f, -radius * 0.5f)
+                lineTo(radius * 0.5f, 0f)
+                lineTo(0f, radius * 0.5f)
+                lineTo(-radius * 0.5f, 0f)
                 close()
             }
-            canvas.drawPath(diamondPath, purplePaint)
-            canvas.drawPath(diamondPath, darkBorderPaint)
+            canvas.drawPath(corePath, blueCorePaint)
+            canvas.drawPath(corePath, darkOutlinePaint)
 
-            val eyeBox = radius * 0.38f
-            val eyePath = Path().apply {
-                moveTo(0f, -eyeBox)
-                lineTo(eyeBox, 0f)
-                lineTo(0f, eyeBox)
-                lineTo(-eyeBox, 0f)
-                close()
-            }
-            canvas.drawPath(eyePath, eyeFillPaint)
-            canvas.drawPath(eyePath, eyeOuterPaint)
-
-            canvas.drawCircle(0f, 0f, radius * 0.16f, eyePupilPaint)
-            canvas.drawCircle(0f, 0f, radius * 0.06f, eyeCorePaint)
+            // Inner glowing eye / center dot
+            canvas.drawCircle(0f, 0f, radius * 0.2f, cyanPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.08f, whiteCenterPaint)
 
             canvas.restore()
         }
 
         override fun setAlpha(alpha: Int) {
-            redPaint.alpha = alpha
-            greenPaint.alpha = alpha
-            purplePaint.alpha = alpha
+            cyanPaint.alpha = alpha
+            pinkPaint.alpha = alpha
+            yellowPaint.alpha = alpha
+            blueCorePaint.alpha = alpha
         }
 
         override fun setColorFilter(colorFilter: ColorFilter?) {}
@@ -273,8 +259,8 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 1.75f) % 360f
-                    starburstDrawable.pulsePhase += 0.065f
+                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 2.5f) % 360f
+                    starburstDrawable.pulsePhase += 0.075f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
                     handler.postDelayed(this, 16L)
@@ -548,6 +534,12 @@ class FloatingCompanionService : Service() {
             SpotifyAppRemote.connect(applicationContext, connectionParams, object : Connector.ConnectionListener {
                 override fun onConnected(appRemote: SpotifyAppRemote) {
                     spotifyAppRemote = appRemote
+                    try {
+                        appRemote.playerApi.subscribeToPlayerState().setEventCallback { playerState ->
+                            val track = playerState.track
+                            currentSpotifyTrack = if (track != null) "${track.name} by ${track.artist.name}" else "nothing"
+                        }
+                    } catch (_: Exception) {}
                 }
 
                 override fun onFailure(throwable: Throwable) {}
@@ -867,7 +859,7 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val spontaneousPrompt = "D has been quiet for a bit and is using $currentForegroundApp. Say something playful."
+                val spontaneousPrompt = "D has been quiet for a bit, using app '$currentForegroundApp', and listening to Spotify track '$currentSpotifyTrack'. Say something playful."
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
                 if (dismissed) return@launch
                 
