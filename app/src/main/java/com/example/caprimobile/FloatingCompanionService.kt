@@ -210,7 +210,6 @@ class FloatingCompanionService : Service() {
                 val spikeAngleIndex = (8 - i) % 8
                 val phaseOffset = spikeAngleIndex * (Math.PI.toFloat() / 4f)
                 
-                // Balanced baseline size with full dynamic pulsing range
                 val spikeScale = 0.90f + 0.45f * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
                 
                 val path = Path().apply {
@@ -229,19 +228,19 @@ class FloatingCompanionService : Service() {
                 canvas.restore()
             }
 
-            // Smaller central core square/diamond
+            // Restored original balanced middle core diamond size
             val corePath = Path().apply {
-                moveTo(0f, -radius * 0.55f)
-                lineTo(radius * 0.55f, 0f)
-                lineTo(0f, radius * 0.55f)
-                lineTo(-radius * 0.55f, 0f)
+                moveTo(0f, -radius * 0.70f)
+                lineTo(radius * 0.70f, 0f)
+                lineTo(0f, radius * 0.70f)
+                lineTo(-radius * 0.70f, 0f)
                 close()
             }
             canvas.drawPath(corePath, purplePaint)
             canvas.drawPath(corePath, outlinePaint)
 
-            // Inner eye core elements (keeping circle/eye sized properly)
-            val eyeBox = radius * 0.42f
+            // Inner circle / eye matched to the size of the middle diamond
+            val eyeBox = radius * 0.70f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
                 lineTo(eyeBox, 0f)
@@ -252,8 +251,8 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(eyePath, eyeFillPaint)
             canvas.drawPath(eyePath, eyeOuterPaint)
 
-            canvas.drawCircle(0f, 0f, radius * 0.18f, eyePupilPaint)
-            canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
+            canvas.drawCircle(0f, 0f, radius * 0.28f, eyePupilPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.12f, eyeCorePaint)
 
             canvas.restore()
         }
