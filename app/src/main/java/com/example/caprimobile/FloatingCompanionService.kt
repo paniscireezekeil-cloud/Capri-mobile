@@ -157,38 +157,39 @@ class FloatingCompanionService : Service() {
         var rotationAngle = 0f
         var pulsePhase = 0f
 
-        private val cyanShardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#00E5FF")
+        private val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#E60039")
             style = Paint.Style.FILL
         }
-        private val pinkShardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF007F")
-            style = Paint.Style.FILL
-        }
-        private val yellowShardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FFEA00")
-            style = Paint.Style.FILL
-        }
-        private val purpleShardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#9C27B0")
-            style = Paint.Style.FILL
-        }
-        private val greenShardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        private val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#00E676")
             style = Paint.Style.FILL
         }
-        private val centerCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#2979FF")
-            style = Paint.Style.FILL
-        }
-        private val whiteDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FFFFFF")
+        private val purplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#7C4DFF")
             style = Paint.Style.FILL
         }
         private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#0A0E17")
             style = Paint.Style.STROKE
             strokeWidth = 2.0f
+        }
+        private val eyeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#110A1F")
+            style = Paint.Style.FILL
+        }
+        private val eyeOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#00FFFF")
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        private val eyePupilPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#2979FF")
+            style = Paint.Style.FILL
+        }
+        private val eyeCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FFFFFF")
+            style = Paint.Style.FILL
         }
 
         override fun draw(canvas: Canvas) {
@@ -204,8 +205,7 @@ class FloatingCompanionService : Service() {
 
             val pulse = 1.0f + 0.08f * abs(sin(pulsePhase.toDouble())).toFloat()
 
-            val shardPaints = arrayOf(cyanShardPaint, pinkShardPaint, yellowShardPaint, purpleShardPaint, cyanShardPaint, greenShardPaint, yellowShardPaint, pinkShardPaint)
-
+            // Strict alternating Red and Green spikes matching video layout[span_3](start_span)[span_3](end_span)
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
@@ -220,12 +220,13 @@ class FloatingCompanionService : Service() {
                     close()
                 }
 
-                val paint = shardPaints[i % shardPaints.size]
+                val paint = if (i % 2 == 0) redPaint else greenPaint
                 canvas.drawPath(path, paint)
                 canvas.drawPath(path, outlinePaint)
                 canvas.restore()
             }
 
+            // Larger central core diamond matching video design[span_4](start_span)[span_4](end_span)
             val corePath = Path().apply {
                 moveTo(0f, -radius * 0.70f)
                 lineTo(radius * 0.70f, 0f)
@@ -233,22 +234,31 @@ class FloatingCompanionService : Service() {
                 lineTo(-radius * 0.70f, 0f)
                 close()
             }
-            canvas.drawPath(corePath, centerCorePaint)
+            canvas.drawPath(corePath, purplePaint)
             canvas.drawPath(corePath, outlinePaint)
 
-            canvas.drawCircle(0f, 0f, radius * 0.26f, cyanShardPaint)
-            canvas.drawCircle(0f, 0f, radius * 0.10f, whiteDotPaint)
+            // Inner eye core elements
+            val eyeBox = radius * 0.42f
+            val eyePath = Path().apply {
+                moveTo(0f, -eyeBox)
+                lineTo(eyeBox, 0f)
+                lineTo(0f, eyeBox)
+                lineTo(-eyeBox, 0f)
+                close()
+            }
+            canvas.drawPath(eyePath, eyeFillPaint)
+            canvas.drawPath(eyePath, eyeOuterPaint)
+
+            canvas.drawCircle(0f, 0f, radius * 0.18f, eyePupilPaint)
+            canvas.drawCircle(0f, 0f, radius * 0.08f, eyeCorePaint)
 
             canvas.restore()
         }
 
         override fun setAlpha(alpha: Int) {
-            cyanShardPaint.alpha = alpha
-            pinkShardPaint.alpha = alpha
-            yellowShardPaint.alpha = alpha
-            purpleShardPaint.alpha = alpha
-            greenShardPaint.alpha = alpha
-            centerCorePaint.alpha = alpha
+            redPaint.alpha = alpha
+            greenPaint.alpha = alpha
+            purplePaint.alpha = alpha
         }
 
         override fun setColorFilter(colorFilter: ColorFilter?) {}
