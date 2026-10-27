@@ -114,7 +114,8 @@ class FloatingCompanionService : Service() {
 
     private val personality = """
         You are Capri, a loyal digital companion and close friend to D. 
-        YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. You have a cyberpunk attitude and a distinct voice.
+        YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. 
+        CRITICAL RULE: Keep your replies extremely short, punchy, and brief (maximum 1 to 2 short sentences). Never ramble.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -138,7 +139,7 @@ class FloatingCompanionService : Service() {
             createCharacterContainer()
             createChatWindow()
 
-            val greeting = "Decided to pop up on your screen. Don't stare too hard, D."
+            val greeting = "Online, D."
             history.add("assistant" to greeting)
             showDialogue("TALKING", "> you: Hey Capri.", greeting)
             
@@ -207,10 +208,13 @@ class FloatingCompanionService : Service() {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
+                val isRed = (i % 2 == 0)
                 val spikeAngleIndex = (8 - i) % 8
                 val phaseOffset = spikeAngleIndex * (Math.PI.toFloat() / 4f)
                 
-                val spikeScale = 0.90f + 0.45f * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
+                val baseScale = if (isRed) 1.05f else 0.75f
+                val pulseAmplitude = if (isRed) 0.45f else 0.30f
+                val spikeScale = baseScale + pulseAmplitude * (0.5f + 0.5f * sin((pulsePhase - phaseOffset).toDouble())).toFloat()
                 
                 val path = Path().apply {
                     moveTo(0f, -radius * spikeScale)
@@ -222,13 +226,16 @@ class FloatingCompanionService : Service() {
                     close()
                 }
 
-                val paint = if (i % 2 == 0) redPaint else greenPaint
+                val paint = if (isRed) redPaint else greenPaint
                 canvas.drawPath(path, paint)
                 canvas.drawPath(path, outlinePaint)
                 canvas.restore()
             }
+            canvas.restore()
 
-            // Restored original balanced middle core diamond size
+            canvas.save()
+            canvas.translate(cx, cy)
+
             val corePath = Path().apply {
                 moveTo(0f, -radius * 0.70f)
                 lineTo(radius * 0.70f, 0f)
@@ -239,7 +246,6 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(corePath, purplePaint)
             canvas.drawPath(corePath, outlinePaint)
 
-            // Inner circle / eye matched to the size of the middle diamond
             val eyeBox = radius * 0.70f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
@@ -471,12 +477,7 @@ class FloatingCompanionService : Service() {
         updateContainerVisuals()
         setMouthOpen(false)
         
-        val formMessage = if (isAlternateForm) {
-            "Shifted into overdrive form, D."
-        } else {
-            "Back to standard form."
-        }
-        
+        val formMessage = if (isAlternateForm) "Overdrive active." else "Standard form."
         showDialogue("TALKING", null, formMessage)
     }
 
@@ -611,7 +612,7 @@ class FloatingCompanionService : Service() {
         }
 
         OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-        if (conn.responseCode != 200) return "Glitch detected, D."
+        if (conn.responseCode != 200) return "Glitch."
 
         val responseString = conn.inputStream.bufferedReader().use { it.readText() }
         return JSONObject(responseString).getJSONArray("choices")
@@ -638,13 +639,13 @@ class FloatingCompanionService : Service() {
             }
 
             OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-            if (conn.responseCode != 200) return "You still there, D?"
+            if (conn.responseCode != 200) return "Still there?"
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
             JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
         } catch (_: Exception) {
-            "You still there, D?"
+            "Still there?"
         }
     }
 
@@ -874,7 +875,7 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val spontaneousPrompt = "D has been quiet for a bit, using app '$currentForegroundApp', and listening to Spotify track '$currentSpotifyTrack'. Say something playful."
+                val spontaneousPrompt = "D is using '$currentForegroundApp' and listening to '$currentSpotifyTrack'. Drop a very brief, punchy, 1-sentence sarcastic remark."
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
                 if (dismissed) return@launch
                 
@@ -1096,7 +1097,7 @@ class FloatingCompanionService : Service() {
                     history.removeAt(history.lastIndex)
                 }
                 if (!dismissed) {
-                    showDialogue("DORMANT", null, "Network error: " + (e.message ?: "error"))
+                    showDialogue("DORMANT", null, "Error.")
                 }
             } finally {
                 busy = false
@@ -1216,7 +1217,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         super.onDestroy()
     }
