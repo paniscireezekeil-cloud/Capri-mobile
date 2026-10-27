@@ -203,15 +203,15 @@ class FloatingCompanionService : Service() {
             canvas.translate(cx, cy)
             canvas.rotate(rotationAngle)
 
-            val pulse = 1.0f + 0.08f * abs(sin(pulsePhase.toDouble())).toFloat()
+            // Larger pulse factor for bigger pulsing spikes
+            val pulse = 1.0f + 0.22f * abs(sin(pulsePhase.toDouble())).toFloat()
 
-            // Strict alternating Red and Green spikes matching video layout[span_3](start_span)[span_3](end_span)
             for (i in 0 until 8) {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
                 val path = Path().apply {
-                    moveTo(0f, -radius * 1.1f * pulse)
+                    moveTo(0f, -radius * 1.35f * pulse) // Spikes reach further out during pulse
                     lineTo(radius * 0.25f, -radius * 0.35f)
                     lineTo(radius * 0.20f, radius * 0.20f)
                     lineTo(0f, radius * 0.45f)
@@ -226,7 +226,6 @@ class FloatingCompanionService : Service() {
                 canvas.restore()
             }
 
-            // Larger central core diamond matching video design[span_4](start_span)[span_4](end_span)
             val corePath = Path().apply {
                 moveTo(0f, -radius * 0.70f)
                 lineTo(radius * 0.70f, 0f)
@@ -237,7 +236,6 @@ class FloatingCompanionService : Service() {
             canvas.drawPath(corePath, purplePaint)
             canvas.drawPath(corePath, outlinePaint)
 
-            // Inner eye core elements
             val eyeBox = radius * 0.42f
             val eyePath = Path().apply {
                 moveTo(0f, -eyeBox)
@@ -272,8 +270,9 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 3.0f) % 360f
-                    starburstDrawable.pulsePhase += 0.085f
+                    // Slower rotation speed and gentler pulse rate
+                    starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 1.0f) % 360f
+                    starburstDrawable.pulsePhase += 0.045f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
                     handler.postDelayed(this, 16L)
