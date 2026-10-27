@@ -207,8 +207,10 @@ class FloatingCompanionService : Service() {
                 canvas.save()
                 canvas.rotate(i * 45f)
                 
-                // Sequential wave/pulse rotating counter-clockwise (to the left), starting at green spikes (odd indices)
-                val phaseOffset = if (i % 2 != 0) 0.0f else Math.PI.toFloat()
+                // Index 1, 3, 5, 7 are green spikes. We assign them a phase offset of 0.0 so the pulse starts there,
+                // while red spikes (0, 2, 4, 6) follow sequentially in a rotating counter-clockwise wave.
+                val spikeAngleIndex = (8 - i) % 8
+                val phaseOffset = spikeAngleIndex * (Math.PI.toFloat() / 4f)
                 val spikePulse = 1.0f + 0.25f * abs(sin((pulsePhase - phaseOffset).toDouble())).toFloat()
                 
                 val path = Path().apply {
@@ -271,9 +273,8 @@ class FloatingCompanionService : Service() {
         starburstAnimRunnable = object : Runnable {
             override fun run() {
                 if (isAlternateForm && !dismissed) {
-                    // Slower rotation speed with smooth wave pulsing
                     starburstDrawable.rotationAngle = (starburstDrawable.rotationAngle + 1.0f) % 360f
-                    starburstDrawable.pulsePhase += 0.055f
+                    starburstDrawable.pulsePhase += 0.065f
                     character?.invalidateDrawable(starburstDrawable)
                     character?.invalidate()
                     handler.postDelayed(this, 16L)
