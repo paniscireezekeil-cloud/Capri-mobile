@@ -563,6 +563,7 @@ class FloatingCompanionService : Service() {
                         val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
                         val authCode = prefs.getString("spotify_auth_code", null)
 
+                        // 1. Get Access Token
                         val tokenUrl = URL("https://accounts.spotify.com/api/token")
                         val tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
                             requestMethod = "POST"
@@ -585,6 +586,23 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
+                            // 2. Find Active Device ID first
+                            var deviceId: String? = null
+                            val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
+                            val devicesConn = (devicesUrl.openConnection() as HttpURLConnection).apply {
+                                requestMethod = "GET"
+                                setRequestProperty("Authorization", "Bearer $accessToken")
+                            }
+
+                            if (devicesConn.responseCode == 200) {
+                                val devicesRes = devicesConn.inputStream.bufferedReader().use { it.readText() }
+                                val devicesArray = JSONObject(devicesRes).getJSONArray("devices")
+                                if (devicesArray.length() > 0) {
+                                    deviceId = devicesArray.getJSONObject(0).getString("id")
+                                }
+                            }
+
+                            // 3. Search Spotify Web API for Track URI
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
                             val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
                             val searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
@@ -598,7 +616,14 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
 
-                                    val playUrl = URL("https://api.spotify.com/v1/me/player/play")
+                                    // 4. Issue Play Command targeted to the Device ID
+                                    val playUrlStr = if (deviceId != null) {
+                                        "https://api.spotify.com/v1/me/player/play?device_id=$deviceId"
+                                    } else {
+                                        "https://api.spotify.com/v1/me/player/play"
+                                    }
+
+                                    val playUrl = URL(playUrlStr)
                                     val playConn = (playUrl.openConnection() as HttpURLConnection).apply {
                                         requestMethod = "PUT"
                                         setRequestProperty("Authorization", "Bearer $accessToken")
