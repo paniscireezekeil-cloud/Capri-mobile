@@ -3,7 +3,6 @@ package com.example.caprimobile
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.SearchManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -21,8 +20,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -54,6 +53,7 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -112,6 +112,7 @@ class FloatingCompanionService : Service() {
 
     private var spotifyAppRemote: SpotifyAppRemote? = null
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
+    private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
     private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
@@ -549,7 +550,8 @@ class FloatingCompanionService : Service() {
         try {
             val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
                 .setRedirectUri(SPOTIFY_REDIRECT_URI)
-                .showAuthView(true)
+                .setScopes(arrayOf("app-remote-control", "streaming", "user-modify-playback-state"))
+                .showAuthView(false)
                 .build()
 
             SpotifyAppRemote.connect(applicationContext, connectionParams, object : Connector.ConnectionListener {
@@ -563,13 +565,18 @@ class FloatingCompanionService : Service() {
                     } catch (_: Exception) {}
                 }
 
-                override fun onFailure(throwable: Throwable) {}
+                override fun onFailure(throwable: Throwable) {
+                    Log.e("FloatingService", "Spotify AppRemote connection failed: ${throwable.message}")
+                }
             })
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Spotify connect error: ${e.message}")
+        }
     }
 
     private fun handleSpotifyCommand(userMessage: String) {
         val lower = userMessage.lowercase()
+        val remote = spotifyAppRemote
 
         if (lower.contains("play")) {
             var query = lower.substringAfter("play").trim()
@@ -584,18 +591,51 @@ class FloatingCompanionService : Service() {
             }
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
-                try {
-                    val intent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
-                        putExtra(SearchManager.QUERY, query)
-                        setPackage("com.spotify.music")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        // 1. Fetch token via Client Credentials for Web API search
+                        val tokenUrl = URL("https://accounts.spotify.com/api/token")
+                        val tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
+                            requestMethod = "POST"
+                            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                            val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
+                            val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
+                            setRequestProperty("Authorization", "Basic $encodedAuth")
+                            doOutput = true
+                        }
+                        OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
+
+                        if (tokenConn.responseCode == 200) {
+                            val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
+                            val accessToken = JSONObject(tokenRes).getString("access_token")
+
+                            // 2. Search Spotify Web API for track URI
+                            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
+                            val searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
+                                requestMethod = "GET"
+                                setRequestProperty("Authorization", "Bearer $accessToken")
+                            }
+
+                            if (searchConn.responseCode == 200) {
+                                val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
+                                val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
+                                if (items.length() > 0) {
+                                    val trackUri = items.getJSONObject(0).getString("uri")
+                                    
+                                    // 3. Command App Remote to play track headlessly using the authorized session
+                                    withContext(Dispatchers.Main) {
+                                        remote?.playerApi?.play(trackUri)
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("FloatingService", "Spotify background play error: ${e.message}")
                     }
-                    startActivity(intent)
-                } catch (_: Exception) {
-                    spotifyAppRemote?.playerApi?.resume()
                 }
             } else {
-                spotifyAppRemote?.playerApi?.resume()
+                remote?.playerApi?.resume()
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
             spotifyAppRemote?.playerApi?.pause()
