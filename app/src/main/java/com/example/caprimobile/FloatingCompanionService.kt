@@ -117,7 +117,7 @@ class FloatingCompanionService : Service() {
         YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. 
         RULES: 
         1. Keep replies extremely short, punchy, and brief (1-2 short sentences max). Never ramble.
-        2. NEVER output JSON, code blocks, or raw brackets. Always reply in pure, natural dialogue text only.
+        2. When D asks you to play music, you ALWAYS obey and actually play it, even if you complain or act sarcastic about it while doing it. Never refuse a music request.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -645,13 +645,12 @@ class FloatingCompanionService : Service() {
         var rawReply = JSONObject(responseString).getJSONArray("choices")
             .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
-        // Clean up any stray JSON output just in case
         if (rawReply.startsWith("{")) {
             try {
                 val parsed = JSONObject(rawReply)
-                rawReply = parsed.optString("reply", "On it, D.")
+                rawReply = parsed.optString("reply", "Done.")
             } catch (_: Exception) {
-                rawReply = "On it, D."
+                rawReply = "Done."
             }
         }
 
@@ -685,7 +684,7 @@ class FloatingCompanionService : Service() {
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
             if (rawReply.startsWith("{")) {
-                try { rawReply = JSONObject(rawReply).optString("reply", "On it.") } catch (_: Exception) {}
+                try { rawReply = JSONObject(rawReply).optString("reply", "Done.") } catch (_: Exception) {}
             }
             rawReply
         } catch (_: Exception) {
@@ -1128,7 +1127,7 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Handle music commands directly via Spotify Remote API
+        // Force-execute Spotify command unconditionally whenever you send a message
         handleSpotifyCommand(message)
 
         scope.launch {
@@ -1196,7 +1195,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1264,7 +1263,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         super.onDestroy()
     }
