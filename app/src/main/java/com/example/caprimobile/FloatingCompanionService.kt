@@ -114,12 +114,11 @@ class FloatingCompanionService : Service() {
     private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
-        You are Capri, a digital companion and close friend to D. 
-        YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. 
-        RULES: 
-        1. Keep replies extremely short, punchy, and brief (1-2 short sentences max). Never ramble.
-        2. NEVER output JSON, code blocks, or raw brackets. Always reply in pure, natural dialogue text only.
-        3. When D asks you to play music, you trigger it via Spotify Web API in the background while giving him mild sass.
+        You are Capri, a close friend and digital companion to D. 
+        PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant. 
+        CRITICAL RULES: 
+        1. Keep replies extremely brief (1 short sentence max). Never ramble.
+        2. NEVER output JSON, code blocks, system instructions, or brackets. Reply ONLY in pure dialogue.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -542,17 +541,12 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private fun handleSpotifyCommand(userMessage: String) {
+    private fun handleCommandRouting(userMessage: String) {
         val lower = userMessage.lowercase()
 
         if (lower.contains("play")) {
             var query = lower.substringAfter("play").trim()
-            query = query.replace("from spotify", "")
-                .replace("on spotify", "")
-                .replace("in spotify", "")
-                .replace("spotify", "")
-                .trim()
-
+            query = query.replace("from spotify", "").replace("on spotify", "").replace("in spotify", "").replace("spotify", "").trim()
             if (query.endsWith(" in") || query.endsWith(" on") || query.endsWith(" at")) {
                 query = query.substring(0, query.length - 3).trim()
             }
@@ -560,11 +554,8 @@ class FloatingCompanionService : Service() {
             if (query.isNotEmpty() && query != "music" && query != "song") {
                 scope.launch(Dispatchers.IO) {
                     var tokenConn: HttpURLConnection? = null
-                    var devicesConn: HttpURLConnection? = null
                     var searchConn: HttpURLConnection? = null
-                    var playConn: HttpURLConnection? = null
                     try {
-                        // Fresh Client Credentials Fetch per command to avoid 401 token expiration
                         val tokenUrl = URL("https://accounts.spotify.com/api/token")
                         tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
                             requestMethod = "POST"
@@ -572,25 +563,23 @@ class FloatingCompanionService : Service() {
                             val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
                             val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
                             setRequestProperty("Authorization", "Basic $encodedAuth")
-                            connectTimeout = 8000
-                            readTimeout = 8000
+                            connectTimeout = 5000
+                            readTimeout = 5000
                             doOutput = true
                         }
-
                         OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
 
                         if (tokenConn.responseCode == 200) {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // Search for exact track
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
                             val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
                             searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 setRequestProperty("Authorization", "Bearer $accessToken")
-                                connectTimeout = 8000
-                                readTimeout = 8000
+                                connectTimeout = 5000
+                                readTimeout = 5000
                             }
 
                             if (searchConn.responseCode == 200) {
@@ -598,37 +587,67 @@ class FloatingCompanionService : Service() {
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
-
-                                    // Direct intent with FLAG_ACTIVITY_NEW_TASK so Spotify always loads the new URI stream
                                     withContext(Dispatchers.Main) {
-                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
-                                            setPackage("com.spotify.music")
-                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                        }
                                         try {
+                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
+                                                setPackage("com.spotify.music")
+                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION
+                                            }
                                             startActivity(intent)
-                                            Log.d("FloatingService", "Successfully updated track URI stream: $trackUri")
+                                            handler.postDelayed({ sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY) }, 400L)
                                         } catch (e: Exception) {
-                                            Log.e("FloatingService", "Intent error: ${e.message}")
+                                            Log.e("FloatingService", "Spotify intent error: ${e.message}")
                                         }
                                     }
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "Safe Spotify Dispatch Error: ${e.message}")
+                        Log.e("FloatingService", "Spotify API error: ${e.message}")
                     } finally {
                         try { tokenConn?.disconnect() } catch (_: Exception) {}
-                        try { devicesConn?.disconnect() } catch (_: Exception) {}
                         try { searchConn?.disconnect() } catch (_: Exception) {}
-                        try { playConn?.disconnect() } catch (_: Exception) {}
                     }
                 }
+            }
+        } else if (lower.startsWith("open ") || lower.contains("launch ")) {
+            val appTarget = lower.substringAfter("open ").substringAfter("launch ").trim()
+            if (appTarget.isNotEmpty()) {
+                launchAppByName(appTarget)
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
         } else if (lower.contains("skip") || lower.contains("next")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+        }
+    }
+
+    private fun launchAppByName(appName: String) {
+        try {
+            val pm = packageManager
+            val packages = pm.getInstalledPackages(0)
+            var targetPackage: String? = null
+
+            for (pkg in packages) {
+                val appLabel = pkg.applicationInfo?.loadLabel(pm)?.toString()?.lowercase() ?: ""
+                if (appLabel.contains(appName) || pkg.packageName.lowercase().contains(appName)) {
+                    targetPackage = pkg.packageName
+                    break
+                }
+            }
+
+            if (targetPackage != null) {
+                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                    Log.d("FloatingService", "Successfully launched app: $targetPackage")
+                }
+            } else {
+                Log.w("FloatingService", "Could not find installed app matching: $appName")
+            }
+        } catch (e: Exception) {
+            Log.e("FloatingService", "App launch error: ${e.message}")
         }
     }
 
@@ -667,46 +686,50 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private fun requestReply(): String {
-        val url = URL("https://openrouter.ai/api/v1/chat/completions")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer ${getApiKey()}")
-            doOutput = true
-            connectTimeout = 15000
-            readTimeout = 15000
-        }
+    private fun requestReply(userMessage: String): String {
+        return try {
+            val url = URL("https://openrouter.ai/api/v1/chat/completions")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer ${getApiKey()}")
+                doOutput = true
+                connectTimeout = 6000
+                readTimeout = 6000
+            }
 
-        val jsonBody = JSONObject().apply {
-            put("model", "openrouter/free")
-            val messagesArray = JSONArray()
-            messagesArray.put(JSONObject().put("role", "system").put("content", personality))
-            synchronized(history) {
-                history.takeLast(10).forEach { (role, content) ->
-                    messagesArray.put(JSONObject().put("role", role).put("content", content))
+            val enhancedPrompt = if (userMessage.lowercase().startsWith("open") || userMessage.lowercase().startsWith("launch")) {
+                "$personality\nD told you to open an app. Give a 1-sentence sarcastic or snarky comment about opening this app."
+            } else {
+                personality
+            }
+
+            val jsonBody = JSONObject().apply {
+                put("model", "openrouter/free")
+                val messagesArray = JSONArray()
+                messagesArray.put(JSONObject().put("role", "system").put("content", enhancedPrompt))
+                synchronized(history) {
+                    history.takeLast(6).forEach { (role, content) ->
+                        messagesArray.put(JSONObject().put("role", role).put("content", content))
+                    }
                 }
+                put("messages", messagesArray)
             }
-            put("messages", messagesArray)
-        }
 
-        OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-        if (conn.responseCode != 200) return "Glitch."
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+            if (conn.responseCode != 200) return "Tch. Network stutter."
 
-        val responseString = conn.inputStream.bufferedReader().use { it.readText() }
-        var rawReply = JSONObject(responseString).getJSONArray("choices")
-            .getJSONObject(0).getJSONObject("message").getString("content").trim()
+            val responseString = conn.inputStream.bufferedReader().use { it.readText() }
+            var rawReply = JSONObject(responseString).getJSONArray("choices")
+                .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
-        if (rawReply.startsWith("{")) {
-            try {
-                val parsed = JSONObject(rawReply)
-                rawReply = parsed.optString("reply", "Playing it now.")
-            } catch (_: Exception) {
-                rawReply = "Playing it now."
+            if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.contains("rule:") || rawReply.length > 120) {
+                rawReply = "Done."
             }
+            rawReply
+        } catch (_: Exception) {
+            "Done."
         }
-
-        return rawReply
     }
 
     private fun requestProactiveReply(instruction: String): String {
@@ -717,8 +740,8 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 15000
-                readTimeout = 15000
+                connectTimeout = 6000
+                readTimeout = 6000
             }
 
             val jsonBody = JSONObject().apply {
@@ -729,18 +752,18 @@ class FloatingCompanionService : Service() {
             }
 
             OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-            if (conn.responseCode != 200) return "Still there?"
+            if (conn.responseCode != 200) return "Still here."
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
             var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
-            if (rawReply.startsWith("{")) {
-                try { rawReply = JSONObject(rawReply).optString("reply", "On it.") } catch (_: Exception) {}
+            if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.length > 120) {
+                rawReply = "Still watching you code."
             }
             rawReply
         } catch (_: Exception) {
-            "Still there?"
+            "Still here."
         }
     }
 
@@ -970,7 +993,7 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val spontaneousPrompt = "D is using '$currentForegroundApp' and listening to '$currentSpotifyTrack'. Drop a very brief, punchy, 1-sentence sarcastic remark."
+                val spontaneousPrompt = "D is using '$currentForegroundApp' and listening to '$currentSpotifyTrack'. Drop a 1-sentence sarcastic remark."
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
                 if (dismissed) return@launch
                 
@@ -1111,7 +1134,6 @@ class FloatingCompanionService : Service() {
             Triple(1.0f, 8, 7),
             Triple(0.2f, -8, -4),
             Triple(0.85f, 16, 0),
-            Triple(0.85f, 16, 0),
             Triple(0.45f, -12, 6),
             Triple(0.15f, 5, -8),
             Triple(0f, 0, 0)
@@ -1180,11 +1202,11 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        handleSpotifyCommand(message)
+        handleCommandRouting(message)
 
         scope.launch {
             try {
-                val reply = withContext(Dispatchers.IO) { requestReply() }
+                val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
@@ -1195,7 +1217,7 @@ class FloatingCompanionService : Service() {
                     history.removeAt(history.lastIndex)
                 }
                 if (!dismissed) {
-                    showDialogue("DORMANT", null, "Error.")
+                    showDialogue("DORMANT", null, "Glitch.")
                 }
             } finally {
                 busy = false
@@ -1307,7 +1329,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         super.onDestroy()
     }
