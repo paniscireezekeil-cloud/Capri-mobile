@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -560,18 +559,24 @@ class FloatingCompanionService : Service() {
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
                 scope.launch(Dispatchers.IO) {
+                    var tokenConn: HttpURLConnection? = null
+                    var devicesConn: HttpURLConnection? = null
+                    var searchConn: HttpURLConnection? = null
+                    var playConn: HttpURLConnection? = null
                     try {
                         val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
                         val authCode = prefs.getString("spotify_auth_code", null)
 
                         // 1. Get Access Token
                         val tokenUrl = URL("https://accounts.spotify.com/api/token")
-                        val tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
+                        tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
                             requestMethod = "POST"
                             setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                             val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
                             val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
                             setRequestProperty("Authorization", "Basic $encodedAuth")
+                            connectTimeout = 10000
+                            readTimeout = 10000
                             doOutput = true
                         }
 
@@ -587,41 +592,84 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // 2. Search Spotify Web API for the EXACT Track URI
-                            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
-                            val searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
+                            // 2. Find Active Device ID cleanly with timeout
+                            var deviceId: String? = null
+                            val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
+                            devicesConn = (devicesUrl.openConnection() as HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 setRequestProperty("Authorization", "Bearer $accessToken")
+                                connectTimeout = 10000
+                                readTimeout = 10000
+                            }
+
+                            if (devicesConn.responseCode == 200) {
+                                val devicesRes = devicesConn.inputStream.bufferedReader().use { it.readText() }
+                                val devicesArray = JSONObject(devicesRes).getJSONArray("devices")
+                                if (devicesArray.length() > 0) {
+                                    for (i in 0 until devicesArray.length()) {
+                                        val dev = devicesArray.getJSONObject(i)
+                                        if (dev.getBoolean("is_active")) {
+                                            deviceId = dev.getString("id")
+                                            break
+                                        }
+                                    }
+                                    if (deviceId == null) {
+                                        deviceId = devicesArray.getJSONObject(0).getString("id")
+                                    }
+                                }
+                            }
+
+                            // 3. Search Spotify Web API for Track URI
+                            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
+                            searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
+                                requestMethod = "GET"
+                                setRequestProperty("Authorization", "Bearer $accessToken")
+                                connectTimeout = 10000
+                                readTimeout = 10000
                             }
 
                             if (searchConn.responseCode == 200) {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
-                                    val trackUri = items.getJSONObject(0).getString("uri") // e.g. spotify:track:xxxx
+                                    val trackUri = items.getJSONObject(0).getString("uri")
 
-                                    // 3. Multi-track clean dispatch: reset player context via explicit flag and target URI
-                                    withContext(Dispatchers.Main) {
-                                        try {
-                                            val silentIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
-                                                setPackage("com.spotify.music")
-                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                                                        Intent.FLAG_ACTIVITY_SINGLE_TOP or 
-                                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                                                        Intent.FLAG_ACTIVITY_NO_ANIMATION
-                                            }
-                                            startActivity(silentIntent)
-                                            Log.d("FloatingService", "Successfully updated track URI stream: $trackUri")
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Multi-track dispatch error: ${e.message}")
-                                        }
+                                    // 4. Background Web API Play Dispatch with connection release
+                                    val playUrlStr = if (deviceId != null) {
+                                        "https://api.spotify.com/v1/me/player/play?device_id=$deviceId"
+                                    } else {
+                                        "https://api.spotify.com/v1/me/player/play"
                                     }
+
+                                    val jsonBody = JSONObject().apply {
+                                        put("uris", JSONArray().apply { put(trackUri) })
+                                    }
+                                    val bodyString = jsonBody.toString()
+
+                                    val playUrl = URL(playUrlStr)
+                                    playConn = (playUrl.openConnection() as HttpURLConnection).apply {
+                                        requestMethod = "PUT"
+                                        setRequestProperty("Authorization", "Bearer $accessToken")
+                                        setRequestProperty("Content-Type", "application/json")
+                                        setRequestProperty("Content-Length", bodyString.toByteArray().size.toString())
+                                        connectTimeout = 10000
+                                        readTimeout = 10000
+                                        doOutput = true
+                                    }
+
+                                    OutputStreamWriter(playConn.outputStream).use { it.write(bodyString) }
+                                    Log.d("FloatingService", "Background Spotify play dispatched, response: ${playConn.responseCode}")
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "Exact Track Intent Error: ${e.message}")
+                        Log.e("FloatingService", "Safe Spotify Background Error: ${e.message}")
+                    } finally {
+                        try { tokenConn?.disconnect() } catch (_: Exception) {}
+                        try { devicesConn?.disconnect() } catch (_: Exception) {}
+                        try { searchConn?.disconnect() } catch (_: Exception) {}
+                        try { playConn?.disconnect() } catch (_: Exception) {}
                     }
                 }
             }
@@ -1242,7 +1290,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1306,7 +1354,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         super.onDestroy()
     }
