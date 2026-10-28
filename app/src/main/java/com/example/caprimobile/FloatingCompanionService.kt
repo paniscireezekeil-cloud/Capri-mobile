@@ -550,7 +550,6 @@ class FloatingCompanionService : Service() {
         try {
             val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
                 .setRedirectUri(SPOTIFY_REDIRECT_URI)
-                .setScopes(arrayOf("app-remote-control", "streaming", "user-modify-playback-state"))
                 .showAuthView(false)
                 .build()
 
@@ -593,7 +592,6 @@ class FloatingCompanionService : Service() {
             if (query.isNotEmpty() && query != "music" && query != "song") {
                 scope.launch(Dispatchers.IO) {
                     try {
-                        // 1. Fetch token via Client Credentials for Web API search
                         val tokenUrl = URL("https://accounts.spotify.com/api/token")
                         val tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
                             requestMethod = "POST"
@@ -609,7 +607,6 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // 2. Search Spotify Web API for track URI
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
                             val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
                             val searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
@@ -623,7 +620,6 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     
-                                    // 3. Command App Remote to play track headlessly using the authorized session
                                     withContext(Dispatchers.Main) {
                                         remote?.playerApi?.play(trackUri)
                                     }
