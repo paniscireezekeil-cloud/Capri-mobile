@@ -36,6 +36,14 @@
 
         </activity>
 
+        <!-- Trampoline Activity to bypass Android background activity launch restrictions -->
+        <activity
+            android:name=".TrampolineActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:exported="false" />
+
         <service
             android:name=".FloatingCompanionService"
             android:exported="false"
