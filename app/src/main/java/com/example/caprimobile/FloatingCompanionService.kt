@@ -117,7 +117,7 @@ class FloatingCompanionService : Service() {
         YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. 
         RULES: 
         1. Keep replies extremely short, punchy, and brief (1-2 short sentences max). Never ramble.
-        2. If D asks you to play a song, music, or artist, you can trigger Spotify playback. In your JSON response, you can append a command format if needed, but always reply in character.
+        2. NEVER output JSON, code blocks, or raw brackets. Always reply in pure, natural dialogue text only.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -571,9 +571,12 @@ class FloatingCompanionService : Service() {
 
         try {
             if (lower.contains("play")) {
-                val query = lower.substringAfter("play").trim()
+                // Extract whatever comes after "play" to use as search query
+                var query = lower.substringAfter("play").trim()
+                // Strip common filler words like "from spotify", "song", etc.
+                query = query.replace("from spotify", "").replace("spotify", "").trim()
+                
                 if (query.isNotEmpty() && query != "music" && query != "song") {
-                    // Try to search/play URI or query via Spotify App Remote
                     val spotifyUri = "spotify:search:$query"
                     remote.playerApi.play(spotifyUri)
                 } else {
@@ -641,8 +644,22 @@ class FloatingCompanionService : Service() {
         if (conn.responseCode != 200) return "Glitch."
 
         val responseString = conn.inputStream.bufferedReader().use { it.readText() }
-        return JSONObject(responseString).getJSONArray("choices")
+        var rawReply = JSONObject(responseString).getJSONArray("choices")
             .getJSONObject(0).getJSONObject("message").getString("content").trim()
+
+        // Fallback safety filter: if the LLM still tries to spit out JSON or brackets, clean it up
+        if (rawReply.startsWith("{") || rawReply.startsWith("[")) {
+            try {
+                val parsed = JSONObject(rawReply)
+                if (parsed.has("reply")) {
+                    rawReply = parsed.getString("reply")
+                }
+            } catch (_: Exception) {
+                rawReply = "On it, D."
+            }
+        }
+
+        return rawReply
     }
 
     private fun requestProactiveReply(instruction: String): String {
@@ -668,8 +685,13 @@ class FloatingCompanionService : Service() {
             if (conn.responseCode != 200) return "Still there?"
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
-            JSONObject(responseString).getJSONArray("choices")
+            var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
+            
+            if (rawReply.startsWith("{")) {
+                try { rawReply = JSONObject(rawReply).optString("reply", "On it.") } catch (_: Exception) {}
+            }
+            rawReply
         } catch (_: Exception) {
             "Still there?"
         }
