@@ -1225,6 +1225,7 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
+        // Execute command routing synchronously on UI thread immediately
         handleCommandRouting(message)
 
         scope.launch {
