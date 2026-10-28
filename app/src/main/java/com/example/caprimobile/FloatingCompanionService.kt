@@ -3,6 +3,7 @@ package com.example.caprimobile
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.SearchManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -20,8 +21,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.MediaStore
 import android.provider.Settings
-import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -53,7 +54,6 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -112,7 +112,6 @@ class FloatingCompanionService : Service() {
 
     private var spotifyAppRemote: SpotifyAppRemote? = null
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
-    private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
     private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
@@ -571,12 +570,12 @@ class FloatingCompanionService : Service() {
 
     private fun handleSpotifyCommand(userMessage: String) {
         val lower = userMessage.lowercase()
-        val remote = spotifyAppRemote
 
         if (lower.contains("play")) {
             var query = lower.substringAfter("play").trim()
             query = query.replace("from spotify", "")
                 .replace("on spotify", "")
+                .replace("in spotify", "")
                 .replace("spotify", "")
                 .trim()
                 
@@ -585,51 +584,18 @@ class FloatingCompanionService : Service() {
             }
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        // 1. Fetch OAuth token using Client ID & Client Secret
-                        val tokenUrl = URL("https://accounts.spotify.com/api/token")
-                        val tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
-                            requestMethod = "POST"
-                            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                            val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
-                            val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
-                            setRequestProperty("Authorization", "Basic $encodedAuth")
-                            doOutput = true
-                        }
-                        OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
-
-                        if (tokenConn.responseCode == 200) {
-                            val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
-                            val accessToken = JSONObject(tokenRes).getString("access_token")
-
-                            // 2. Search Spotify Web API for the exact track URI
-                            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
-                            val searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
-                                requestMethod = "GET"
-                                setRequestProperty("Authorization", "Bearer $accessToken")
-                            }
-
-                            if (searchConn.responseCode == 200) {
-                                val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
-                                val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
-                                if (items.length() > 0) {
-                                    val trackUri = items.getJSONObject(0).getString("uri")
-                                    
-                                    // 3. Play exact track URI headlessly via App Remote
-                                    withContext(Dispatchers.Main) {
-                                        remote?.playerApi?.play(trackUri)
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("FloatingService", "Spotify background play error: ${e.message}")
+                try {
+                    val intent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                        putExtra(SearchManager.QUERY, query)
+                        setPackage("com.spotify.music")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
+                    startActivity(intent)
+                } catch (_: Exception) {
+                    spotifyAppRemote?.playerApi?.resume()
                 }
             } else {
-                remote?.playerApi?.resume()
+                spotifyAppRemote?.playerApi?.resume()
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
             spotifyAppRemote?.playerApi?.pause()
@@ -1242,7 +1208,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1305,683 +1271,12 @@ class FloatingCompanionService : Service() {
         containerView = null
         character = null
         statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
-        statusTag = null
+        dialogueBubble = null
+        userQueryText = null
+        chatInput = null
+        chatWindow = null
         charParams = null
+        chatParams = null
 
         super.onDestroy()
     }
