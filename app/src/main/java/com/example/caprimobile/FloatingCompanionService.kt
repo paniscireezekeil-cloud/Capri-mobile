@@ -653,17 +653,14 @@ class FloatingCompanionService : Service() {
                 val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
                 if (launchIntent != null) {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
-                    Log.d("FloatingService", "Successfully launched app: $targetPackage")
-                } else {
-                    val directIntent = pm.getLaunchIntentForPackage(targetPackage) 
-                        ?: pm.getLeanbackLaunchIntentForPackage(targetPackage)
-                    if (directIntent != null) {
-                        directIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(directIntent)
-                    } else {
-                        Log.e("FloatingService", "Launch intent null for package: $targetPackage")
+                    
+                    // Route through TrampolineActivity to bypass Android background activity launch restrictions
+                    val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
+                        putExtra("TARGET_INTENT", launchIntent)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                     }
+                    startActivity(trampolineIntent)
+                    Log.d("FloatingService", "Successfully triggered trampoline launch for: $targetPackage")
                 }
             } else {
                 Log.w("FloatingService", "Could not find installed app matching: $appName")
