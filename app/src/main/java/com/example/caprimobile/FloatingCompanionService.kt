@@ -16,7 +16,6 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -441,21 +440,19 @@ class FloatingCompanionService : Service() {
                                 dismissCompanion()
                             } else if (!dismissed) {
                                 val now = System.currentTimeMillis()
-                                formatNowTag@{
-                                    if (now - lastTapTime < 350L) {
-                                        singleTapRunnable?.let { handler.removeCallbacks(it) }
-                                        singleTapRunnable = null
-                                        lastTapTime = 0L
-                                        toggleAlternateForm()
-                                    } else {
-                                        lastTapTime = now
-                                        singleTapRunnable = Runnable {
-                                            if (!dismissed) {
-                                                toggleChatWindow()
-                                            }
+                                if (now - lastTapTime < 350L) {
+                                    singleTapRunnable?.let { handler.removeCallbacks(it) }
+                                    singleTapRunnable = null
+                                    lastTapTime = 0L
+                                    toggleAlternateForm()
+                                } else {
+                                    lastTapTime = now
+                                    singleTapRunnable = Runnable {
+                                        if (!dismissed) {
+                                            toggleChatWindow()
                                         }
-                                        handler.postDelayed(singleTapRunnable!!, 350L)
                                     }
+                                    handler.postDelayed(singleTapRunnable!!, 350L)
                                 }
                             }
                         }
@@ -586,7 +583,6 @@ class FloatingCompanionService : Service() {
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
                 if (remote != null) {
-                    // Pass the query as a context/search URI string directly to App Remote player API
                     remote.playerApi.play("spotify:search:$query")
                 } else {
                     Log.e("FloatingService", "Spotify App Remote not connected.")
@@ -1205,7 +1201,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
