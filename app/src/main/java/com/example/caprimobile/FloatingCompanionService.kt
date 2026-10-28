@@ -16,6 +16,7 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -23,7 +24,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -53,6 +53,7 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -567,6 +568,27 @@ class FloatingCompanionService : Service() {
         } catch (_: Exception) {}
     }
 
+    private fun fetchTrackUriFromSearch(query: String): String? {
+        return try {
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val url = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+            if (conn.responseCode == 200) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val tracks = JSONObject(response).getJSONObject("tracks").getJSONArray("items")
+                if (tracks.length() > 0) {
+                    tracks.getJSONObject(0).getString("uri")
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun handleSpotifyCommand(userMessage: String) {
         val lower = userMessage.lowercase()
         val remote = spotifyAppRemote
@@ -583,18 +605,23 @@ class FloatingCompanionService : Service() {
             }
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
-                if (remote != null) {
-                    remote.playerApi.play("spotify:search:$query")
-                }
-                
-                try {
-                    val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                        setPackage("com.spotify.music")
-                        putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                scope.launch(Dispatchers.IO) {
+                    val resolvedUri = fetchTrackUriFromSearch(query)
+                    withContext(Dispatchers.Main) {
+                        if (resolvedUri != null) {
+                            // Play the precise track URI silently via App Remote
+                            remote?.playerApi?.play(resolvedUri)
+                        } else {
+                            // Backup: Launch Spotify search intent if track URI lookup failed
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$query")).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
                     }
-                    applicationContext.sendBroadcast(mediaIntent)
-                } catch (_: Exception) {}
-
+                }
             } else {
                 remote?.playerApi?.resume()
             }
@@ -1142,7 +1169,7 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Headless background command execution
+        // Triggers track resolution and playback
         handleSpotifyCommand(message)
 
         scope.launch {
@@ -1210,7 +1237,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
