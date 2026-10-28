@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -600,20 +601,20 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri") // e.g. spotify:track:xxxx
 
-                                    // 3. Launch the exact track URI directly into the Spotify app via Intent
+                                    // 3. Multi-track clean dispatch: reset player context via explicit flag and target URI
                                     withContext(Dispatchers.Main) {
-                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
-                                            setPackage("com.spotify.music")
-                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                        }
                                         try {
-                                            startActivity(intent)
-                                            Log.d("FloatingService", "Launched exact track URI: $trackUri")
-                                        } catch (e: Exception) {
-                                            val fallbackIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
-                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                            val silentIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
+                                                setPackage("com.spotify.music")
+                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                                        Intent.FLAG_ACTIVITY_SINGLE_TOP or 
+                                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                                                        Intent.FLAG_ACTIVITY_NO_ANIMATION
                                             }
-                                            startActivity(fallbackIntent)
+                                            startActivity(silentIntent)
+                                            Log.d("FloatingService", "Successfully updated track URI stream: $trackUri")
+                                        } catch (e: Exception) {
+                                            Log.e("FloatingService", "Multi-track dispatch error: ${e.message}")
                                         }
                                     }
                                 }
@@ -1241,7 +1242,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1305,7 +1306,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         super.onDestroy()
     }
