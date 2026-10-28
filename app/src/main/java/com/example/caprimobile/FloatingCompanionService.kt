@@ -53,7 +53,6 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -442,19 +441,21 @@ class FloatingCompanionService : Service() {
                                 dismissCompanion()
                             } else if (!dismissed) {
                                 val now = System.currentTimeMillis()
-                                if (now - lastTapTime < 350L) {
-                                    singleTapRunnable?.let { handler.removeCallbacks(it) }
-                                    singleTapRunnable = null
-                                    lastTapTime = 0L
-                                    toggleAlternateForm()
-                                } else {
-                                    lastTapTime = now
-                                    singleTapRunnable = Runnable {
-                                        if (!dismissed) {
-                                            toggleChatWindow()
+                                formatNowTag@{
+                                    if (now - lastTapTime < 350L) {
+                                        singleTapRunnable?.let { handler.removeCallbacks(it) }
+                                        singleTapRunnable = null
+                                        lastTapTime = 0L
+                                        toggleAlternateForm()
+                                    } else {
+                                        lastTapTime = now
+                                        singleTapRunnable = Runnable {
+                                            if (!dismissed) {
+                                                toggleChatWindow()
+                                            }
                                         }
+                                        handler.postDelayed(singleTapRunnable!!, 350L)
                                     }
-                                    handler.postDelayed(singleTapRunnable!!, 350L)
                                 }
                             }
                         }
@@ -568,27 +569,6 @@ class FloatingCompanionService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun fetchTrackUriFromSearch(query: String): String? {
-        return try {
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
-            }
-            if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
-                val tracks = JSONObject(response).getJSONObject("tracks").getJSONArray("items")
-                if (tracks.length() > 0) {
-                    tracks.getJSONObject(0).getString("uri")
-                } else null
-            } else null
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     private fun handleSpotifyCommand(userMessage: String) {
         val lower = userMessage.lowercase()
         val remote = spotifyAppRemote
@@ -605,22 +585,11 @@ class FloatingCompanionService : Service() {
             }
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
-                scope.launch(Dispatchers.IO) {
-                    val resolvedUri = fetchTrackUriFromSearch(query)
-                    withContext(Dispatchers.Main) {
-                        if (resolvedUri != null) {
-                            // Play the precise track URI silently via App Remote
-                            remote?.playerApi?.play(resolvedUri)
-                        } else {
-                            // Backup: Launch Spotify search intent if track URI lookup failed
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$query")).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                startActivity(intent)
-                            } catch (_: Exception) {}
-                        }
-                    }
+                if (remote != null) {
+                    // Pass the query as a context/search URI string directly to App Remote player API
+                    remote.playerApi.play("spotify:search:$query")
+                } else {
+                    Log.e("FloatingService", "Spotify App Remote not connected.")
                 }
             } else {
                 remote?.playerApi?.resume()
@@ -1169,7 +1138,6 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Triggers track resolution and playback
         handleSpotifyCommand(message)
 
         scope.launch {
