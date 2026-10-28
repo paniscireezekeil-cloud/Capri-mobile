@@ -564,10 +564,7 @@ class FloatingCompanionService : Service() {
                     var searchConn: HttpURLConnection? = null
                     var playConn: HttpURLConnection? = null
                     try {
-                        val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
-                        val authCode = prefs.getString("spotify_auth_code", null)
-
-                        // 1. Get Access Token
+                        // Fresh Client Credentials Fetch per command to avoid 401 token expiration
                         val tokenUrl = URL("https://accounts.spotify.com/api/token")
                         tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
                             requestMethod = "POST"
@@ -575,58 +572,25 @@ class FloatingCompanionService : Service() {
                             val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
                             val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
                             setRequestProperty("Authorization", "Basic $encodedAuth")
-                            connectTimeout = 10000
-                            readTimeout = 10000
+                            connectTimeout = 8000
+                            readTimeout = 8000
                             doOutput = true
                         }
 
-                        val postData = if (authCode != null) {
-                            "grant_type=authorization_code&code=$authCode&redirect_uri=${URLEncoder.encode(SPOTIFY_REDIRECT_URI, "UTF-8")}"
-                        } else {
-                            "grant_type=client_credentials"
-                        }
-
-                        OutputStreamWriter(tokenConn.outputStream).use { it.write(postData) }
+                        OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
 
                         if (tokenConn.responseCode == 200) {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // 2. Find Active Device ID cleanly with timeout
-                            var deviceId: String? = null
-                            val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
-                            devicesConn = (devicesUrl.openConnection() as HttpURLConnection).apply {
-                                requestMethod = "GET"
-                                setRequestProperty("Authorization", "Bearer $accessToken")
-                                connectTimeout = 10000
-                                readTimeout = 10000
-                            }
-
-                            if (devicesConn.responseCode == 200) {
-                                val devicesRes = devicesConn.inputStream.bufferedReader().use { it.readText() }
-                                val devicesArray = JSONObject(devicesRes).getJSONArray("devices")
-                                if (devicesArray.length() > 0) {
-                                    for (i in 0 until devicesArray.length()) {
-                                        val dev = devicesArray.getJSONObject(i)
-                                        if (dev.getBoolean("is_active")) {
-                                            deviceId = dev.getString("id")
-                                            break
-                                        }
-                                    }
-                                    if (deviceId == null) {
-                                        deviceId = devicesArray.getJSONObject(0).getString("id")
-                                    }
-                                }
-                            }
-
-                            // 3. Search Spotify Web API for Track URI
+                            // Search for exact track
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
                             val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
                             searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 setRequestProperty("Authorization", "Bearer $accessToken")
-                                connectTimeout = 10000
-                                readTimeout = 10000
+                                connectTimeout = 8000
+                                readTimeout = 8000
                             }
 
                             if (searchConn.responseCode == 200) {
@@ -635,36 +599,24 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
 
-                                    // 4. Background Web API Play Dispatch with connection release
-                                    val playUrlStr = if (deviceId != null) {
-                                        "https://api.spotify.com/v1/me/player/play?device_id=$deviceId"
-                                    } else {
-                                        "https://api.spotify.com/v1/me/player/play"
+                                    // Direct intent with FLAG_ACTIVITY_NEW_TASK so Spotify always loads the new URI stream
+                                    withContext(Dispatchers.Main) {
+                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
+                                            setPackage("com.spotify.music")
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                        }
+                                        try {
+                                            startActivity(intent)
+                                            Log.d("FloatingService", "Successfully updated track URI stream: $trackUri")
+                                        } catch (e: Exception) {
+                                            Log.e("FloatingService", "Intent error: ${e.message}")
+                                        }
                                     }
-
-                                    val jsonBody = JSONObject().apply {
-                                        put("uris", JSONArray().apply { put(trackUri) })
-                                    }
-                                    val bodyString = jsonBody.toString()
-
-                                    val playUrl = URL(playUrlStr)
-                                    playConn = (playUrl.openConnection() as HttpURLConnection).apply {
-                                        requestMethod = "PUT"
-                                        setRequestProperty("Authorization", "Bearer $accessToken")
-                                        setRequestProperty("Content-Type", "application/json")
-                                        setRequestProperty("Content-Length", bodyString.toByteArray().size.toString())
-                                        connectTimeout = 10000
-                                        readTimeout = 10000
-                                        doOutput = true
-                                    }
-
-                                    OutputStreamWriter(playConn.outputStream).use { it.write(bodyString) }
-                                    Log.d("FloatingService", "Background Spotify play dispatched, response: ${playConn.responseCode}")
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "Safe Spotify Background Error: ${e.message}")
+                        Log.e("FloatingService", "Safe Spotify Dispatch Error: ${e.message}")
                     } finally {
                         try { tokenConn?.disconnect() } catch (_: Exception) {}
                         try { devicesConn?.disconnect() } catch (_: Exception) {}
@@ -1158,6 +1110,7 @@ class FloatingCompanionService : Service() {
             Triple(0.35f, -15, 3),
             Triple(1.0f, 8, 7),
             Triple(0.2f, -8, -4),
+            Triple(0.85f, 16, 0),
             Triple(0.85f, 16, 0),
             Triple(0.45f, -12, 6),
             Triple(0.15f, 5, -8),
