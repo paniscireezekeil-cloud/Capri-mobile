@@ -604,8 +604,8 @@ class FloatingCompanionService : Service() {
                     }
                 }
             }
-        } else if (lower.startsWith("open ") || lower.contains("launch ")) {
-            val appTarget = lower.substringAfter("open ").substringAfter("launch ").trim()
+        } else if (lower.contains("open") || lower.contains("launch")) {
+            val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
             if (appTarget.isNotEmpty()) {
                 launchAppByName(appTarget)
             }
@@ -619,18 +619,33 @@ class FloatingCompanionService : Service() {
     private fun launchAppByName(appName: String) {
         try {
             val pm = packageManager
-            val intent = Intent(Intent.ACTION_MAIN, null).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-            }
-            val resolveInfos = pm.queryIntentActivities(intent, 0)
+            val targetLower = appName.lowercase().trim()
             var targetPackage: String? = null
 
-            for (resolveInfo in resolveInfos) {
-                val label = resolveInfo.loadLabel(pm).toString().lowercase()
-                val packageName = resolveInfo.activityInfo.packageName.lowercase()
-                if (label.contains(appName.lowercase()) || packageName.contains(appName.lowercase())) {
-                    targetPackage = resolveInfo.activityInfo.packageName
-                    break
+            if (targetLower.contains("youtube")) {
+                targetPackage = "com.google.android.youtube"
+            } else if (targetLower.contains("spotify")) {
+                targetPackage = "com.spotify.music"
+            } else if (targetLower.contains("discord")) {
+                targetPackage = "com.discord"
+            } else if (targetLower.contains("messenger")) {
+                targetPackage = "com.facebook.orca"
+            } else if (targetLower.contains("instagram")) {
+                targetPackage = "com.instagram.android"
+            }
+
+            if (targetPackage == null) {
+                val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+                val resolveInfos = pm.queryIntentActivities(intent, 0)
+                for (resolveInfo in resolveInfos) {
+                    val label = resolveInfo.loadLabel(pm).toString().lowercase()
+                    val packageName = resolveInfo.activityInfo.packageName.lowercase()
+                    if (label.contains(targetLower) || packageName.contains(targetLower)) {
+                        targetPackage = resolveInfo.activityInfo.packageName
+                        break
+                    }
                 }
             }
 
@@ -640,12 +655,21 @@ class FloatingCompanionService : Service() {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(launchIntent)
                     Log.d("FloatingService", "Successfully launched app: $targetPackage")
+                } else {
+                    val directIntent = pm.getLaunchIntentForPackage(targetPackage) 
+                        ?: pm.getLeanbackLaunchIntentForPackage(targetPackage)
+                    if (directIntent != null) {
+                        directIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(directIntent)
+                    } else {
+                        Log.e("FloatingService", "Launch intent null for package: $targetPackage")
+                    }
                 }
             } else {
                 Log.w("FloatingService", "Could not find installed app matching: $appName")
             }
         } catch (e: Exception) {
-            Log.e("FloatingService", "App launch error: ${e.message}")
+            Log.e("FloatingService", "App launch error: ${e.message}", e)
         }
     }
 
@@ -696,8 +720,9 @@ class FloatingCompanionService : Service() {
                 readTimeout = 6000
             }
 
-            val enhancedPrompt = if (userMessage.lowercase().startsWith("open") || userMessage.lowercase().contains("launch")) {
-                "$personality\nD told you to open an app. You are opening it for them, but you MUST give a sarcastic, snarky 1-sentence complaint about doing it while you do it."
+            val lowerMsg = userMessage.lowercase()
+            val enhancedPrompt = if (lowerMsg.contains("open") || lowerMsg.contains("launch")) {
+                "$personality\nD told you to open an app. You are opening it for them right now, but you MUST give a sarcastic, snarky 1-sentence complaint about doing it."
             } else {
                 personality
             }
