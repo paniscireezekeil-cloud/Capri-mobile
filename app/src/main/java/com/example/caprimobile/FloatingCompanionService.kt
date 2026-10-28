@@ -586,32 +586,7 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // 2. Find Active Device ID
-                            var deviceId: String? = null
-                            val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
-                            val devicesConn = (devicesUrl.openConnection() as HttpURLConnection).apply {
-                                requestMethod = "GET"
-                                setRequestProperty("Authorization", "Bearer $accessToken")
-                            }
-
-                            if (devicesConn.responseCode == 200) {
-                                val devicesRes = devicesConn.inputStream.bufferedReader().use { it.readText() }
-                                val devicesArray = JSONObject(devicesRes).getJSONArray("devices")
-                                if (devicesArray.length() > 0) {
-                                    for (i in 0 until devicesArray.length()) {
-                                        val dev = devicesArray.getJSONObject(i)
-                                        if (dev.getBoolean("is_active")) {
-                                            deviceId = dev.getString("id")
-                                            break
-                                        }
-                                    }
-                                    if (deviceId == null) {
-                                        deviceId = devicesArray.getJSONObject(0).getString("id")
-                                    }
-                                }
-                            }
-
-                            // 3. Search Spotify Web API for Track URI
+                            // 2. Search Spotify Web API for the EXACT Track URI
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
                             val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
                             val searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
@@ -623,36 +598,29 @@ class FloatingCompanionService : Service() {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
-                                    val trackUri = items.getJSONObject(0).getString("uri")
+                                    val trackUri = items.getJSONObject(0).getString("uri") // e.g. spotify:track:xxxx
 
-                                    // 4. Build explicit JSON payload for Play endpoint with enforced content length
-                                    val playUrlStr = if (deviceId != null) {
-                                        "https://api.spotify.com/v1/me/player/play?device_id=$deviceId"
-                                    } else {
-                                        "https://api.spotify.com/v1/me/player/play"
+                                    // 3. Launch the exact track URI directly into the Spotify app via Intent
+                                    withContext(Dispatchers.Main) {
+                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
+                                            setPackage("com.spotify.music")
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        try {
+                                            startActivity(intent)
+                                            Log.d("FloatingService", "Launched exact track URI: $trackUri")
+                                        } catch (e: Exception) {
+                                            val fallbackIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(trackUri)).apply {
+                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                            }
+                                            startActivity(fallbackIntent)
+                                        }
                                     }
-
-                                    val jsonBody = JSONObject().apply {
-                                        put("uris", JSONArray().apply { put(trackUri) })
-                                    }
-                                    val bodyString = jsonBody.toString()
-
-                                    val playUrl = URL(playUrlStr)
-                                    val playConn = (playUrl.openConnection() as HttpURLConnection).apply {
-                                        requestMethod = "PUT"
-                                        setRequestProperty("Authorization", "Bearer $accessToken")
-                                        setRequestProperty("Content-Type", "application/json")
-                                        setRequestProperty("Content-Length", bodyString.toByteArray().size.toString())
-                                        doOutput = true
-                                    }
-
-                                    OutputStreamWriter(playConn.outputStream).use { it.write(bodyString) }
-                                    Log.d("FloatingService", "Playback triggered: URI $trackUri on Device $deviceId | Response: ${playConn.responseCode}")
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "Spotify API Error: ${e.message}")
+                        Log.e("FloatingService", "Exact Track Intent Error: ${e.message}")
                     }
                 }
             }
