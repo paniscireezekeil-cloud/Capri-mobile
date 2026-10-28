@@ -586,7 +586,7 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // 2. Find Active Device ID first
+                            // 2. Find Active Device ID
                             var deviceId: String? = null
                             val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
                             val devicesConn = (devicesUrl.openConnection() as HttpURLConnection).apply {
@@ -598,7 +598,16 @@ class FloatingCompanionService : Service() {
                                 val devicesRes = devicesConn.inputStream.bufferedReader().use { it.readText() }
                                 val devicesArray = JSONObject(devicesRes).getJSONArray("devices")
                                 if (devicesArray.length() > 0) {
-                                    deviceId = devicesArray.getJSONObject(0).getString("id")
+                                    for (i in 0 until devicesArray.length()) {
+                                        val dev = devicesArray.getJSONObject(i)
+                                        if (dev.getBoolean("is_active")) {
+                                            deviceId = dev.getString("id")
+                                            break
+                                        }
+                                    }
+                                    if (deviceId == null) {
+                                        deviceId = devicesArray.getJSONObject(0).getString("id")
+                                    }
                                 }
                             }
 
@@ -616,27 +625,29 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
 
-                                    // 4. Issue Play Command targeted to the Device ID
+                                    // 4. Build explicit JSON payload for Play endpoint with enforced content length
                                     val playUrlStr = if (deviceId != null) {
                                         "https://api.spotify.com/v1/me/player/play?device_id=$deviceId"
                                     } else {
                                         "https://api.spotify.com/v1/me/player/play"
                                     }
 
+                                    val jsonBody = JSONObject().apply {
+                                        put("uris", JSONArray().apply { put(trackUri) })
+                                    }
+                                    val bodyString = jsonBody.toString()
+
                                     val playUrl = URL(playUrlStr)
                                     val playConn = (playUrl.openConnection() as HttpURLConnection).apply {
                                         requestMethod = "PUT"
                                         setRequestProperty("Authorization", "Bearer $accessToken")
                                         setRequestProperty("Content-Type", "application/json")
+                                        setRequestProperty("Content-Length", bodyString.toByteArray().size.toString())
                                         doOutput = true
                                     }
 
-                                    val jsonBody = JSONObject().apply {
-                                        put("uris", JSONArray().apply { put(trackUri) })
-                                    }
-
-                                    OutputStreamWriter(playConn.outputStream).use { it.write(jsonBody.toString()) }
-                                    Log.d("FloatingService", "Playback triggered: Response Code ${playConn.responseCode}")
+                                    OutputStreamWriter(playConn.outputStream).use { it.write(bodyString) }
+                                    Log.d("FloatingService", "Playback triggered: URI $trackUri on Device $deviceId | Response: ${playConn.responseCode}")
                                 }
                             }
                         }
