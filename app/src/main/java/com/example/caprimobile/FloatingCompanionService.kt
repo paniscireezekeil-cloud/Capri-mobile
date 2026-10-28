@@ -16,7 +16,6 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -24,6 +23,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -584,18 +584,24 @@ class FloatingCompanionService : Service() {
 
             if (query.isNotEmpty() && query != "music" && query != "song") {
                 if (remote != null) {
-                    // Headless background playback via App Remote API
                     remote.playerApi.play("spotify:search:$query")
-                } else {
-                    Log.e("FloatingService", "Spotify App Remote not connected yet.")
                 }
+                
+                try {
+                    val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                        setPackage("com.spotify.music")
+                        putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    }
+                    applicationContext.sendBroadcast(mediaIntent)
+                } catch (_: Exception) {}
+
             } else {
                 remote?.playerApi?.resume()
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
-            remote?.playerApi?.pause()
+            spotifyAppRemote?.playerApi?.pause()
         } else if (lower.contains("skip") || lower.contains("next")) {
-            remote?.playerApi?.skipNext()
+            spotifyAppRemote?.playerApi?.skipNext()
         }
     }
 
@@ -1136,7 +1142,7 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Headless background execution of Spotify command
+        // Headless background command execution
         handleSpotifyCommand(message)
 
         scope.launch {
