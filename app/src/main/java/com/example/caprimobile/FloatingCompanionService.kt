@@ -3,6 +3,7 @@ package com.example.caprimobile
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.SearchManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -16,10 +17,12 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -117,7 +120,8 @@ class FloatingCompanionService : Service() {
         YOUR PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant, and independent. 
         RULES: 
         1. Keep replies extremely short, punchy, and brief (1-2 short sentences max). Never ramble.
-        2. When D asks you to play music, you ALWAYS obey and actually play it, even if you complain or act sarcastic about it while doing it. Never refuse a music request.
+        2. NEVER output JSON, code blocks, or raw brackets. Always reply in pure, natural dialogue text only.
+        3. When D asks you to play music, you ALWAYS play it for him while making a quick sarcastic comment about his song choice.
     """.trimIndent()
 
     private fun getApiKey(): String {
@@ -567,26 +571,42 @@ class FloatingCompanionService : Service() {
 
     private fun handleSpotifyCommand(userMessage: String) {
         val lower = userMessage.lowercase()
-        val remote = spotifyAppRemote ?: return
 
-        try {
-            if (lower.contains("play")) {
-                var query = lower.substringAfter("play").trim()
-                query = query.replace("from spotify", "").replace("spotify", "").trim()
-                
-                if (query.isNotEmpty() && query != "music" && query != "song") {
-                    val spotifyUri = "spotify:search:$query"
-                    remote.playerApi.play(spotifyUri)
-                } else {
-                    remote.playerApi.resume()
+        if (lower.contains("play")) {
+            var query = lower.substringAfter("play").trim()
+            query = query.replace("from spotify", "")
+                .replace("on spotify", "")
+                .replace("spotify", "")
+                .trim()
+
+            if (query.isNotEmpty() && query != "music" && query != "song") {
+                // Try App Remote SDK first
+                spotifyAppRemote?.playerApi?.play("spotify:search:$query")
+
+                // Force Android Media Search Intent to guarantee playback in Spotify app
+                try {
+                    val searchIntent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                        putExtra(SearchManager.QUERY, query)
+                        setPackage("com.spotify.music")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(searchIntent)
+                } catch (_: Exception) {
+                    // Fallback to Uri Intent if package match is blocked
+                    try {
+                        val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$query")).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(fallbackIntent)
+                    } catch (_: Exception) {}
                 }
-            } else if (lower.contains("pause") || lower.contains("stop")) {
-                remote.playerApi.pause()
-            } else if (lower.contains("skip") || lower.contains("next")) {
-                remote.playerApi.skipNext()
+            } else {
+                spotifyAppRemote?.playerApi?.resume()
             }
-        } catch (e: Exception) {
-            Log.e("FloatingService", "Spotify command error: ${e.message}")
+        } else if (lower.contains("pause") || lower.contains("stop")) {
+            spotifyAppRemote?.playerApi?.pause()
+        } else if (lower.contains("skip") || lower.contains("next")) {
+            spotifyAppRemote?.playerApi?.skipNext()
         }
     }
 
@@ -648,9 +668,9 @@ class FloatingCompanionService : Service() {
         if (rawReply.startsWith("{")) {
             try {
                 val parsed = JSONObject(rawReply)
-                rawReply = parsed.optString("reply", "Done.")
+                rawReply = parsed.optString("reply", "Playing it now.")
             } catch (_: Exception) {
-                rawReply = "Done."
+                rawReply = "Playing it now."
             }
         }
 
@@ -684,7 +704,7 @@ class FloatingCompanionService : Service() {
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
             if (rawReply.startsWith("{")) {
-                try { rawReply = JSONObject(rawReply).optString("reply", "Done.") } catch (_: Exception) {}
+                try { rawReply = JSONObject(rawReply).optString("reply", "On it.") } catch (_: Exception) {}
             }
             rawReply
         } catch (_: Exception) {
@@ -1127,7 +1147,7 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Force-execute Spotify command unconditionally whenever you send a message
+        // Direct execution of Spotify playback command
         handleSpotifyCommand(message)
 
         scope.launch {
@@ -1195,7 +1215,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1263,7 +1283,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         super.onDestroy()
     }
