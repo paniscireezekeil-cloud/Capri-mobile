@@ -74,12 +74,12 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
-        spawnButton = createButton("SPAWN CAPRI") {
-            spawnCapri()
-        }
-
         val spotifyAuthButton = createButton("CONNECT SPOTIFY PREMIUM") {
             authorizeSpotify()
+        }
+
+        spawnButton = createButton("SPAWN CAPRI") {
+            spawnCapri()
         }
 
         root.addView(overlayButton, buttonParams())
