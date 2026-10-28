@@ -635,10 +635,10 @@ class FloatingCompanionService : Service() {
             }
 
             if (targetPackage == null) {
-                val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                val searchIntent = Intent(Intent.ACTION_MAIN, null).apply {
                     addCategory(Intent.CATEGORY_LAUNCHER)
                 }
-                val resolveInfos = pm.queryIntentActivities(intent, 0)
+                val resolveInfos = pm.queryIntentActivities(searchIntent, 0)
                 for (resolveInfo in resolveInfos) {
                     val label = resolveInfo.loadLabel(pm).toString().lowercase()
                     val packageName = resolveInfo.activityInfo.packageName.lowercase()
@@ -652,18 +652,31 @@ class FloatingCompanionService : Service() {
             if (targetPackage != null) {
                 val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
                 if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // Samsung One UI Multi-Tasking & Background Activity Launch Flags
+                    launchIntent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                    )
                     
-                    // Route through TrampolineActivity to bypass Android background activity launch restrictions
+                    // Route via TrampolineActivity first for Android 10+ background restriction bypass
                     val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
                         putExtra("TARGET_INTENT", launchIntent)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                     }
-                    startActivity(trampolineIntent)
-                    Log.d("FloatingService", "Successfully triggered trampoline launch for: $targetPackage")
+                    
+                    try {
+                        startActivity(trampolineIntent)
+                        Log.d("FloatingService", "Trampoline launch sent for: $targetPackage")
+                    } catch (e: Exception) {
+                        // Direct fallback if Trampoline execution gets blocked by Samsung Knox
+                        startActivity(launchIntent)
+                        Log.d("FloatingService", "Direct launch fallback sent for: $targetPackage")
+                    }
                 }
             } else {
-                Log.w("FloatingService", "Could not find installed app matching: $appName")
+                Log.w("FloatingService", "Could not find package for app: $appName")
             }
         } catch (e: Exception) {
             Log.e("FloatingService", "App launch error: ${e.message}", e)
