@@ -571,9 +571,7 @@ class FloatingCompanionService : Service() {
 
         try {
             if (lower.contains("play")) {
-                // Extract whatever comes after "play" to use as search query
                 var query = lower.substringAfter("play").trim()
-                // Strip common filler words like "from spotify", "song", etc.
                 query = query.replace("from spotify", "").replace("spotify", "").trim()
                 
                 if (query.isNotEmpty() && query != "music" && query != "song") {
@@ -647,13 +645,11 @@ class FloatingCompanionService : Service() {
         var rawReply = JSONObject(responseString).getJSONArray("choices")
             .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
-        // Fallback safety filter: if the LLM still tries to spit out JSON or brackets, clean it up
-        if (rawReply.startsWith("{") || rawReply.startsWith("[")) {
+        // Clean up any stray JSON output just in case
+        if (rawReply.startsWith("{")) {
             try {
                 val parsed = JSONObject(rawReply)
-                if (parsed.has("reply")) {
-                    rawReply = parsed.getString("reply")
-                }
+                rawReply = parsed.optString("reply", "On it, D.")
             } catch (_: Exception) {
                 rawReply = "On it, D."
             }
@@ -1268,7 +1264,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         super.onDestroy()
     }
