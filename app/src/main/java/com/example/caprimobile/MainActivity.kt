@@ -2,6 +2,7 @@ package com.example.caprimobile
 
 import android.app.Activity
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -15,9 +16,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.spotify.android.appremote.api.ConnectionParams
-import com.spotify.android.appremote.api.Connector
-import com.spotify.android.appremote.api.SpotifyAppRemote
 
 class MainActivity : Activity() {
 
@@ -31,8 +29,6 @@ class MainActivity : Activity() {
 
     private val CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val REDIRECT_URI = "com.example.caprimobile://callback"
-
-    private var spotifyAppRemote: SpotifyAppRemote? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,12 +78,17 @@ class MainActivity : Activity() {
             spawnCapri()
         }
 
+        val spotifyAuthButton = createButton("CONNECT SPOTIFY PREMIUM") {
+            authorizeSpotify()
+        }
+
         root.addView(overlayButton, buttonParams())
         root.addView(notificationButton, buttonParams())
+        root.addView(spotifyAuthButton, buttonParams())
         root.addView(spawnButton, buttonParams())
 
         val note = TextView(this).apply {
-            text = "Enable floating overlay permission, then spawn Capri."
+            text = "Enable permissions & authorize Spotify, then spawn Capri."
             textSize = 14f
             setTextColor(Color.GRAY)
             gravity = Gravity.CENTER
@@ -101,55 +102,37 @@ class MainActivity : Activity() {
 
         setContentView(root)
         refreshPermissionStatus()
+        handleSpotifyCallback(intent)
     }
 
-    override fun onStart() {
-        super.onStart()
-
-        val connectionParams = ConnectionParams.Builder(CLIENT_ID)
-            .setRedirectUri(REDIRECT_URI)
-            .showAuthView(true)
-            .build()
-
-        try {
-            SpotifyAppRemote.connect(
-                this,
-                connectionParams,
-                object : Connector.ConnectionListener {
-                    override fun onConnected(appRemote: SpotifyAppRemote) {
-                        spotifyAppRemote = appRemote
-                        connected()
-                    }
-
-                    override fun onFailure(throwable: Throwable) {
-                        Log.e("MainActivity", "Spotify connection failed", throwable)
-                    }
-                }
-            )
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Spotify startup failed", e)
-        }
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleSpotifyCallback(intent)
     }
 
-    private fun connected() {
-        try {
-            spotifyAppRemote?.playerApi
-                ?.play("spotify:track:7qiZfU4dY1lWllzX7mPBI3")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Spotify playback failed", e)
-        }
+    private fun authorizeSpotify() {
+        val scopes = Uri.encode("user-modify-playback-state user-read-playback-state user-read-currently-playing")
+        val authUrl = "https://accounts.spotify.com/authorize?" +
+                "client_id=$CLIENT_ID" +
+                "&response_type=code" +
+                "&redirect_uri=${Uri.encode(REDIRECT_URI)}" +
+                "&scope=$scopes" +
+                "&show_dialog=true"
+
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+        startActivity(intent)
     }
 
-    override fun onStop() {
-        spotifyAppRemote?.let {
-            try {
-                SpotifyAppRemote.disconnect(it)
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Spotify disconnect failed", e)
+    private fun handleSpotifyCallback(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.toString().startsWith(REDIRECT_URI)) {
+            val code = uri.getQueryParameter("code")
+            if (code != null) {
+                val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putString("spotify_auth_code", code).apply()
+                Log.d("MainActivity", "Spotify authorized! Saved auth code.")
             }
         }
-        spotifyAppRemote = null
-        super.onStop()
     }
 
     private fun spawnCapri() {
