@@ -1,4 +1,3 @@
-
 package com.example.caprimobile
 
 import android.app.Activity
@@ -107,8 +106,10 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
 
+        // Explicitly set authorization scopes so Spotify grants playback permissions
         val connectionParams = ConnectionParams.Builder(CLIENT_ID)
             .setRedirectUri(REDIRECT_URI)
+            .setScopes(arrayOf("app-remote-control", "streaming", "user-modify-playback-state"))
             .showAuthView(true)
             .build()
 
