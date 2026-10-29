@@ -38,6 +38,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -613,13 +616,13 @@ class FloatingCompanionService : Service() {
     }
 
     private fun playViaAppRemote(trackUri: String) {
-        val connectionParams = com.spotify.android.appremote.api.ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
             .setRedirectUri("caprimobile://callback")
             .showAuthView(false)
             .build()
 
-        com.spotify.android.appremote.api.SpotifyAppRemote.connect(this, connectionParams, object : com.spotify.android.appremote.api.Connector.ConnectionListener {
-            override fun onConnected(spotifyAppRemote: com.spotify.android.appremote.api.SpotifyAppRemote) {
+        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
+            override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
                 spotifyAppRemote.playerApi.play(trackUri)
                 Log.d("FloatingService", "App Remote successfully commanded track: $trackUri")
             }
@@ -1379,7 +1382,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         super.onDestroy()
     }
