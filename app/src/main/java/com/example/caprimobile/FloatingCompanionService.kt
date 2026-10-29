@@ -3,7 +3,6 @@ package com.example.caprimobile
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -591,20 +590,19 @@ class FloatingCompanionService : Service() {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            val bgIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
+                                                setPackage("com.spotify.music")
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_FROM_BACKGROUND or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
                                             }
-                                            val flagImmutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-                                            val pendingIntent = PendingIntent.getActivity(
-                                                this@FloatingCompanionService,
-                                                System.currentTimeMillis().toInt(),
-                                                intent,
-                                                PendingIntent.FLAG_UPDATE_CURRENT or flagImmutable
-                                            )
-                                            pendingIntent.send()
-                                            Log.d("FloatingService", "Successfully launched Spotify track URI: $trackUri")
+                                            startActivity(bgIntent)
+
+                                            handler.postDelayed({
+                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                            }, 300L)
+
+                                            Log.d("FloatingService", "Background track play triggered: $trackUri")
                                         } catch (e: Exception) {
-                                            Log.e("FloatingService", "Spotify URI launch error: ${e.message}")
+                                            Log.e("FloatingService", "Background launch error: ${e.message}")
                                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                         }
                                     }
@@ -623,11 +621,6 @@ class FloatingCompanionService : Service() {
                 }
             } else {
                 sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-            }
-        } else if (lower.contains("open") || lower.contains("launch")) {
-            val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
-            if (appTarget.isNotEmpty()) {
-                launchAppByName(appTarget)
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
@@ -679,21 +672,12 @@ class FloatingCompanionService : Service() {
                 }
 
                 if (launchIntent != null) {
-                    val flagImmutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-                    val pendingIntent = PendingIntent.getActivity(
-                        this,
-                        System.currentTimeMillis().toInt(),
-                        launchIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or flagImmutable
-                    )
-
-                    try {
-                        pendingIntent.send()
-                        Log.d("FloatingService", "Successfully executed PendingIntent launch for: $targetPackage")
-                    } catch (e: Exception) {
-                        startActivity(launchIntent)
-                        Log.d("FloatingService", "Fallback direct launch executed for: $targetPackage")
+                    val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
+                        putExtra("TARGET_INTENT", launchIntent)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                     }
+                    startActivity(trampolineIntent)
+                    Log.d("FloatingService", "Successfully triggered Trampoline launch for: $targetPackage")
                 }
             } else {
                 Log.w("FloatingService", "Could not find installed app matching: $appName")
@@ -1255,15 +1239,25 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Execute command routing synchronously on UI thread immediately
-        handleCommandRouting(message)
-
         scope.launch {
             try {
+                // 1. Fetch AI dialogue first so she drops her snarky line smoothly
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
+                
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
+
+                // 2. Execute app launch or spotify routing immediately after dialogue renders
+                val lower = message.lowercase()
+                if (lower.contains("open") || lower.contains("launch")) {
+                    val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
+                    if (appTarget.isNotEmpty()) {
+                        launchAppByName(appTarget)
+                    }
+                } else {
+                    handleCommandRouting(message)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
