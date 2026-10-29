@@ -38,6 +38,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -587,29 +590,13 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
-                                        try {
-                                            // Send explicit package broadcast to force background track switch without UI popups
-                                            val broadcastIntent = Intent("com.spotify.mobile.android.ui.action.PLAY").apply {
-                                                setPackage("com.spotify.music")
-                                                putExtra("spotify_uri", trackUri)
-                                            }
-                                            sendBroadcast(broadcastIntent)
-
-                                            handler.postDelayed({
-                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                            }, 200L)
-
-                                            Log.d("FloatingService", "Background broadcast play sent for: $trackUri")
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Broadcast error: ${e.message}")
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                        }
+                                        playViaAppRemote(trackUri)
                                     }
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "API error: ${e.message}")
+                        Log.e("FloatingService", "Search/Play error: ${e.message}")
                         withContext(Dispatchers.Main) {
                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                         }
@@ -626,6 +613,26 @@ class FloatingCompanionService : Service() {
         } else if (lower.contains("skip") || lower.contains("next")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
         }
+    }
+
+    private fun playViaAppRemote(trackUri: String) {
+        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+            .setRedirectUri("caprimobile://callback")
+            .showAuthView(false)
+            .build()
+
+        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
+            override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
+                spotifyAppRemote.playerApi.play(trackUri)
+                Log.d("FloatingService", "App Remote successfully commanded track: $trackUri")
+                SpotifyAppRemote.disconnect(spotifyAppRemote)
+            }
+
+            override fun onFailure(throwable: Throwable) {
+                Log.e("FloatingService", "App Remote connection dropped: ${throwable.message}")
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+            }
+        })
     }
 
     private fun launchAppByName(appName: String) {
@@ -1247,7 +1254,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or background broadcast music control
+                // 2. Execute app launch or App Remote music switch command
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
