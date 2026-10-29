@@ -1350,7 +1350,7 @@ class FloatingCompanionService : Service() {
             try {
                 // 1. Fetch AI dialogue first
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
-                if (dismissed) return$dismissedLaunchCheck()
+                if (dismissed) return@launch
                 
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
@@ -1383,8 +1383,6 @@ class FloatingCompanionService : Service() {
             }
         }
     }
-
-    private fun dismissedLaunchCheck(): Boolean = dismissed
 
     private fun safeUpdateViewLayout(view: View, params: WindowManager.LayoutParams) {
         try {
