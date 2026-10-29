@@ -587,7 +587,7 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
-                                        playViaAppRemote(trackUri)
+                                        playViaWebAPI(trackUri)
                                     }
                                 }
                             }
@@ -612,25 +612,86 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private fun playViaAppRemote(trackUri: String) {
-        try {
-            // Force an explicit background deep-link URI dispatch directly to Spotify's content provider
-            val uri = android.net.Uri.parse(trackUri)
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                setPackage("com.spotify.music")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+    private fun playViaWebAPI(trackUri: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val token = getOrRefreshSpotifyUserToken()
+                if (token.isEmpty()) {
+                    Log.e("FloatingService", "No valid Spotify User OAuth token found. Please connect in MainActivity.")
+                    sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                    return@launch
+                }
+
+                val url = URL("https://api.spotify.com/v1/me/player/play")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("Content-Type", "application/json")
+                    doOutput = true
+                    connectTimeout = 3000
+                    readTimeout = 3000
+                }
+
+                val body = JSONObject().apply {
+                    put("uris", JSONArray().put(trackUri))
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+
+                val responseCode = conn.responseCode
+                if (responseCode == 204 || responseCode == 200) {
+                    Log.d("FloatingService", "Successfully switched track silently via Web API: $trackUri")
+                } else {
+                    Log.e("FloatingService", "Spotify Web API play error code: $responseCode")
+                    sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                }
+            } catch (e: Exception) {
+                Log.e("FloatingService", "Web API track dispatch failed: ${e.message}")
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
             }
-            
-            // Route securely through TrampolineActivity to guarantee background execution permission bypass on One UI
-            val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
-                putExtra("TARGET_INTENT", intent)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        }
+    }
+
+    private fun getOrRefreshSpotifyUserToken(): String {
+        val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
+        val refreshToken = prefs.getString("spotify_refresh_token", "") ?: ""
+        if (refreshToken.isEmpty()) {
+            return prefs.getString("spotify_user_token", "") ?: ""
+        }
+
+        return try {
+            val url = URL("https://accounts.spotify.com/api/token")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                doOutput = true
+                connectTimeout = 3000
+                readTimeout = 3000
             }
-            startActivity(trampolineIntent)
-            Log.d("FloatingService", "Successfully forced background track switch for URI: $trackUri")
-        } catch (e: Exception) {
-            Log.e("FloatingService", "Track playback dispatch failed: ${e.message}")
-            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+
+            val body = "grant_type=refresh_token" +
+                    "&refresh_token=$refreshToken" +
+                    "&client_id=$SPOTIFY_CLIENT_ID"
+
+            OutputStreamWriter(conn.outputStream).use { it.write(body) }
+
+            if (conn.responseCode == 200) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(response)
+                val newAccessToken = json.getString("access_token")
+
+                if (json.has("refresh_token")) {
+                    val newRefreshToken = json.getString("refresh_token")
+                    prefs.edit().putString("spotify_refresh_token", newRefreshToken).apply()
+                }
+
+                prefs.edit().putString("spotify_user_token", newAccessToken).apply()
+                newAccessToken
+            } else {
+                prefs.getString("spotify_user_token", "") ?: ""
+            }
+        } catch (_: Exception) {
+            prefs.getString("spotify_user_token", "") ?: ""
         }
     }
 
