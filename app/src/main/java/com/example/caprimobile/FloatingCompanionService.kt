@@ -619,37 +619,51 @@ class FloatingCompanionService : Service() {
                 val token = getOrRefreshSpotifyUserToken()
                 if (token.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingCompanionService, "Spotify Token Missing! Connect in App.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@FloatingCompanionService, "Token Missing! Connect in App.", Toast.LENGTH_SHORT).show()
                     }
-                    sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                     return@launch
                 }
 
-                // 1. Check for available active devices first
-                val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
-                val devicesConn = (devicesUrl.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    setRequestProperty("Authorization", "Bearer $token")
-                    connectTimeout = 3000
-                    readTimeout = 3000
+                fun findDeviceId(): String? {
+                    return try {
+                        val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
+                        val conn = (devicesUrl.openConnection() as HttpURLConnection).apply {
+                            requestMethod = "GET"
+                            setRequestProperty("Authorization", "Bearer $token")
+                            connectTimeout = 3000
+                            readTimeout = 3000
+                        }
+                        if (conn.responseCode == 200) {
+                            val res = conn.inputStream.bufferedReader().use { it.readText() }
+                            val devicesArray = JSONObject(res).getJSONArray("devices")
+                            var fallbackId: String? = null
+                            for (i in 0 until devicesArray.length()) {
+                                val dev = devicesArray.getJSONObject(i)
+                                if (dev.optBoolean("is_active", false)) {
+                                    return dev.getString("id")
+                                }
+                                if (fallbackId == null) fallbackId = dev.optString("id", null)
+                            }
+                            fallbackId
+                        } else null
+                    } catch (_: Exception) { null }
                 }
 
-                var targetDeviceId: String? = null
-                if (devicesConn.responseCode == 200) {
-                    val devicesRes = devicesConn.inputStream.bufferedReader().use { it.readText() }
-                    val devicesArray = JSONObject(devicesRes).getJSONArray("devices")
-                    for (i in 0 until devicesArray.length()) {
-                        val device = devicesArray.getJSONObject(i)
-                        if (device.optBoolean("is_active", false)) {
-                            targetDeviceId = device.getString("id")
-                            break
-                        } else if (targetDeviceId == null) {
-                            targetDeviceId = device.optString("id", null)
+                var targetDeviceId = findDeviceId()
+
+                if (targetDeviceId == null) {
+                    val launchIntent = packageManager.getLaunchIntentForPackage("com.spotify.music")
+                    if (launchIntent != null) {
+                        val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
+                            putExtra("TARGET_INTENT", launchIntent)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                         }
+                        startActivity(trampolineIntent)
+                        delay(1200L)
+                        targetDeviceId = findDeviceId()
                     }
                 }
 
-                // 2. Send play command with the specific device target if available
                 var playUrlStr = "https://api.spotify.com/v1/me/player/play"
                 if (!targetDeviceId.isNullOrEmpty()) {
                     playUrlStr += "?device_id=$targetDeviceId"
@@ -661,8 +675,8 @@ class FloatingCompanionService : Service() {
                     setRequestProperty("Authorization", "Bearer $token")
                     setRequestProperty("Content-Type", "application/json")
                     doOutput = true
-                    connectTimeout = 3000
-                    readTimeout = 3000
+                    connectTimeout = 4000
+                    readTimeout = 4000
                 }
 
                 val body = JSONObject().apply {
@@ -673,22 +687,16 @@ class FloatingCompanionService : Service() {
 
                 val responseCode = conn.responseCode
                 if (responseCode == 204 || responseCode == 200) {
-                    Log.d("FloatingService", "Successfully switched track silently via Web API: $trackUri")
+                    Log.d("FloatingService", "Playback started via Web API.")
                 } else {
-                    val errStr = try { conn.errorStream?.bufferedReader()?.use { it.readText() } } catch (_: Exception) { "" }
-                    Log.e("FloatingService", "Spotify API error code: $responseCode | $errStr")
-                    
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingCompanionService, "Spotify Error: $responseCode", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@FloatingCompanionService, "Spotify Error Code: $responseCode", Toast.LENGTH_SHORT).show()
                     }
-                    sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                 }
             } catch (e: Exception) {
-                Log.e("FloatingService", "Web API track dispatch failed: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FloatingCompanionService, "API Exception: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@FloatingCompanionService, "Dispatch Error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                 }
-                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
             }
         }
     }
@@ -1348,14 +1356,12 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                // 1. Fetch AI dialogue first
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
                 
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or track routing
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
