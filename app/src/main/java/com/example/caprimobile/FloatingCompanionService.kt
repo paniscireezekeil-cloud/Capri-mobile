@@ -17,7 +17,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -588,29 +587,9 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
-                                        try {
-                                            // Bounce through TrampolineActivity to prevent UI focus-stealing
-                                            val targetIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
-                                                setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-
-                                            val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
-                                                putExtra("TARGET_INTENT", targetIntent)
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                            }
-                                            startActivity(trampolineIntent)
-
-                                            handler.postDelayed({
-                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                            }, 250L)
-
-                                            Log.d("FloatingService", "Trampoline background track play triggered: $trackUri")
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Trampoline launch error: ${e.message}")
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                        }
+                                        sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                     }
+                                    Log.d("FloatingService", "Track verified: $trackUri (Media key unpaused)")
                                 }
                             }
                         }
@@ -1253,7 +1232,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or Spotify trampoline command immediately
+                // 2. Execute app launch or safe background music control
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
