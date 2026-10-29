@@ -10,12 +10,24 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
 
 class MainActivity : Activity() {
 
@@ -25,10 +37,14 @@ class MainActivity : Activity() {
 
     private lateinit var overlayButton: Button
     private lateinit var notificationButton: Button
+    private lateinit var spotifyAuthButton: Button
     private lateinit var spawnButton: Button
 
-    private val CLIENT_ID = "51c61988c9464b689446166f26650f3b"
-    private val REDIRECT_URI = "com.example.caprimobile://callback"
+    companion object {
+        private const val CLIENT_ID = "51c61988c9464b689446166f26650f3b"
+        private const val REDIRECT_URI = "com.example.caprimobile://callback"
+        private var codeVerifier: String? = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,7 +90,7 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
-        val spotifyAuthButton = createButton("CONNECT SPOTIFY PREMIUM") {
+        spotifyAuthButton = createButton("CONNECT SPOTIFY PREMIUM") {
             authorizeSpotify()
         }
 
@@ -111,15 +127,22 @@ class MainActivity : Activity() {
     }
 
     private fun authorizeSpotify() {
-        val scopes = Uri.encode("user-modify-playback-state user-read-playback-state user-read-currently-playing")
-        val authUrl = "https://accounts.spotify.com/authorize?" +
-                "client_id=$CLIENT_ID" +
-                "&response_type=code" +
-                "&redirect_uri=${Uri.encode(REDIRECT_URI)}" +
-                "&scope=$scopes" +
-                "&show_dialog=true"
+        val verifier = generateCodeVerifier()
+        codeVerifier = verifier
+        val challenge = generateCodeChallenge(verifier)
 
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+        val scopes = Uri.encode("user-modify-playback-state user-read-playback-state user-read-currently-playing")
+        val authUrl = Uri.parse("https://accounts.spotify.com/authorize").buildUpon()
+            .appendQueryParameter("client_id", CLIENT_ID)
+            .appendQueryParameter("response_type", "code")
+            .appendQueryParameter("redirect_uri", REDIRECT_URI)
+            .appendQueryParameter("code_challenge_method", "S256")
+            .appendQueryParameter("code_challenge", challenge)
+            .appendQueryParameter("scope", scopes)
+            .appendQueryParameter("show_dialog", "true")
+            .build()
+
+        val intent = Intent(Intent.ACTION_VIEW, authUrl)
         startActivity(intent)
     }
 
@@ -127,12 +150,72 @@ class MainActivity : Activity() {
         val uri = intent?.data ?: return
         if (uri.toString().startsWith(REDIRECT_URI)) {
             val code = uri.getQueryParameter("code")
-            if (code != null) {
-                val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
-                prefs.edit().putString("spotify_auth_code", code).apply()
-                Log.d("MainActivity", "Spotify authorized! Saved auth code.")
+            val verifier = codeVerifier
+            if (code != null && verifier != null) {
+                exchangeCodeForTokens(code, verifier)
+            } else if (code != null) {
+                Log.e("MainActivity", "Code verifier was lost during redirect.")
             }
         }
+    }
+
+    private fun exchangeCodeForTokens(code: String, verifier: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("https://accounts.spotify.com/api/token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    doOutput = true
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+
+                val body = "grant_type=authorization_code" +
+                        "&code=$code" +
+                        "&redirect_uri=${Uri.encode(REDIRECT_URI)}" +
+                        "&client_id=$CLIENT_ID" +
+                        "&code_verifier=$verifier"
+
+                OutputStreamWriter(conn.outputStream).use { it.write(body) }
+
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(response)
+                    val accessToken = json.getString("access_token")
+                    val refreshToken = json.optString("refresh_token", "")
+
+                    val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("spotify_user_token", accessToken)
+                        .putString("spotify_refresh_token", refreshToken)
+                        .apply()
+
+                    Log.d("MainActivity", "Spotify authorized! Tokens saved successfully.")
+
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Spotify Connected!", Toast.LENGTH_SHORT).show()
+                        refreshPermissionStatus()
+                    }
+                } else {
+                    Log.e("MainActivity", "Token exchange failed code: ${conn.responseCode}")
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Token exchange error: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun generateCodeVerifier(): String {
+        val bytes = ByteArray(64)
+        SecureRandom().nextBytes(bytes)
+        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    }
+
+    private fun generateCodeChallenge(verifier: String): String {
+        val bytes = verifier.toByteArray(Charsets.US_ASCII)
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        return Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
 
     private fun spawnCapri() {
@@ -221,6 +304,16 @@ class MainActivity : Activity() {
                 "ALLOW NOTIFICATION ACCESS"
             }
 
+        val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
+        val hasSpotifyToken = !prefs.getString("spotify_user_token", "").isNull_Empty()
+
+        spotifyAuthButton.text =
+            if (hasSpotifyToken) {
+                "SPOTIFY PREMIUM: CONNECTED"
+            } else {
+                "CONNECT SPOTIFY PREMIUM"
+            }
+
         spawnButton.isEnabled = Settings.canDrawOverlays(this)
         spawnButton.alpha = if (spawnButton.isEnabled) 1f else 0.5f
     }
@@ -243,6 +336,8 @@ class MainActivity : Activity() {
             refreshPermissionStatus()
         }
     }
+
+    private fun CharSequence?.isNull_Empty(): Boolean = this == null || this.isEmpty()
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
