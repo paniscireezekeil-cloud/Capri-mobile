@@ -3,6 +3,7 @@ package com.example.caprimobile
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -652,33 +653,36 @@ class FloatingCompanionService : Service() {
             }
 
             if (targetPackage != null) {
-                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(
+                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)?.apply {
+                    addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
                     )
-                    
-                    val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
-                        putExtra("TARGET_INTENT", launchIntent)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                    }
-                    
+                }
+
+                if (launchIntent != null) {
+                    val flagImmutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                    val pendingIntent = PendingIntent.getActivity(
+                        this,
+                        System.currentTimeMillis().toInt(),
+                        launchIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or flagImmutable
+                    )
+
                     try {
-                        startActivity(trampolineIntent)
-                        Log.d("FloatingService", "Trampoline launch sent for: $targetPackage")
+                        pendingIntent.send()
+                        Log.d("FloatingService", "Successfully executed PendingIntent launch for: $targetPackage")
                     } catch (e: Exception) {
                         startActivity(launchIntent)
-                        Log.d("FloatingService", "Direct launch fallback sent for: $targetPackage")
+                        Log.d("FloatingService", "Fallback direct launch executed for: $targetPackage")
                     }
                 }
             } else {
-                Log.w("FloatingService", "Could not find package for app: $appName")
+                Log.w("FloatingService", "Could not find installed app matching: $appName")
             }
         } catch (e: Exception) {
-            Log.e("FloatingService", "App launch error: ${e.message}", e)
+            Log.e("FloatingService", "App launch execution error: ${e.message}", e)
         }
     }
 
