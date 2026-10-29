@@ -42,8 +42,7 @@ dependencies {
     // Firebase & App Check
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-appcheck-debug'
-
-    // +++ ADDED: Spotify App Remote SDK +++
+    
+    // Spotify Auth Library
     implementation 'com.spotify.android:auth:1.2.5'
-    implementation files('libs/spotify-app-remote-release-0.7.2.aar')
 }
