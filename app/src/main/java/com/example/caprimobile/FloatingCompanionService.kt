@@ -589,23 +589,27 @@ class FloatingCompanionService : Service() {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            // Route track switch URI intent via TrampolineActivity with background flags
-                                            val targetIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
+                                            // 1. Open Spotify to play the requested track
+                                            val bgIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
                                                 setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_FROM_BACKGROUND or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                             }
-
-                                            val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
-                                                putExtra("TARGET_INTENT", targetIntent)
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                            }
-                                            startActivity(trampolineIntent)
+                                            startActivity(bgIntent)
 
                                             handler.postDelayed({
                                                 sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                             }, 250L)
 
-                                            Log.d("FloatingService", "Working Trampoline track switch triggered: $trackUri")
+                                            // 2. Instantly minimize/close Spotify right after it opens
+                                            handler.postDelayed({
+                                                val closeIntent = Intent(Intent.ACTION_MAIN).apply {
+                                                    addCategory(Intent.CATEGORY_HOME)
+                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                                                }
+                                                startActivity(closeIntent)
+                                                Log.d("FloatingService", "Spotify popped open, played, and auto-minimized.")
+                                            }, 700L)
+
                                         } catch (e: Exception) {
                                             Log.e("FloatingService", "Launch error: ${e.message}")
                                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
@@ -758,7 +762,7 @@ class FloatingCompanionService : Service() {
                 put("messages", messagesArray)
             }
 
-OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
             if (conn.responseCode != 200) return "Tch. Whatever."
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
@@ -1253,7 +1257,7 @@ OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or Trampoline music routing
+                // 2. Execute app launch or auto-minimizing Spotify music switch
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
