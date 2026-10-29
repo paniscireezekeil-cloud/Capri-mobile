@@ -589,20 +589,25 @@ class FloatingCompanionService : Service() {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            // Silent track swap URI intent with background flags
-                                            val bgIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
+                                            // Bounce through TrampolineActivity to prevent UI focus-stealing
+                                            val targetIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
                                                 setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_FROM_BACKGROUND or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                             }
-                                            startActivity(bgIntent)
+
+                                            val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
+                                                putExtra("TARGET_INTENT", targetIntent)
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                            }
+                                            startActivity(trampolineIntent)
 
                                             handler.postDelayed({
                                                 sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                             }, 250L)
 
-                                            Log.d("FloatingService", "Track swapped & played: $trackUri")
+                                            Log.d("FloatingService", "Trampoline background track play triggered: $trackUri")
                                         } catch (e: Exception) {
-                                            Log.e("FloatingService", "Launch error: ${e.message}")
+                                            Log.e("FloatingService", "Trampoline launch error: ${e.message}")
                                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                         }
                                     }
@@ -1241,14 +1246,14 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                // 1. Fetch dialogue first so text box updates smoothly
+                // 1. Fetch AI dialogue first so she talks smoothly
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
                 
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Route both app launches and music search correctly
+                // 2. Execute app launch or Spotify trampoline command immediately
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
