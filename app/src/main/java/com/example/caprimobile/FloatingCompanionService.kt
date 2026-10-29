@@ -18,6 +18,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -587,11 +588,24 @@ class FloatingCompanionService : Service() {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
+                                    val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            val flagImmutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                                            val pendingIntent = PendingIntent.getActivity(
+                                                this@FloatingCompanionService,
+                                                System.currentTimeMillis().toInt(),
+                                                intent,
+                                                PendingIntent.FLAG_UPDATE_CURRENT or flagImmutable
+                                            )
+                                            pendingIntent.send()
+                                            Log.d("FloatingService", "Successfully launched Spotify track URI: $trackUri")
                                         } catch (e: Exception) {
-                                            Log.e("FloatingService", "Media key error: ${e.message}")
+                                            Log.e("FloatingService", "Spotify URI launch error: ${e.message}")
+                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                         }
                                     }
                                 }
@@ -599,6 +613,9 @@ class FloatingCompanionService : Service() {
                         }
                     } catch (e: Exception) {
                         Log.e("FloatingService", "Spotify API error: ${e.message}")
+                        withContext(Dispatchers.Main) {
+                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                        }
                     } finally {
                         try { tokenConn?.disconnect() } catch (_: Exception) {}
                         try { searchConn?.disconnect() } catch (_: Exception) {}
