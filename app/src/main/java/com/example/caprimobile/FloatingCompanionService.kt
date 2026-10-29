@@ -603,6 +603,8 @@ class FloatingCompanionService : Service() {
                         try { searchConn?.disconnect() } catch (_: Exception) {}
                     }
                 }
+            } else {
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
             }
         } else if (lower.contains("open") || lower.contains("launch")) {
             val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
@@ -652,7 +654,6 @@ class FloatingCompanionService : Service() {
             if (targetPackage != null) {
                 val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
                 if (launchIntent != null) {
-                    // Samsung One UI Multi-Tasking & Background Activity Launch Flags
                     launchIntent.addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -660,7 +661,6 @@ class FloatingCompanionService : Service() {
                         Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                     )
                     
-                    // Route via TrampolineActivity first for Android 10+ background restriction bypass
                     val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
                         putExtra("TARGET_INTENT", launchIntent)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -670,7 +670,6 @@ class FloatingCompanionService : Service() {
                         startActivity(trampolineIntent)
                         Log.d("FloatingService", "Trampoline launch sent for: $targetPackage")
                     } catch (e: Exception) {
-                        // Direct fallback if Trampoline execution gets blocked by Samsung Knox
                         startActivity(launchIntent)
                         Log.d("FloatingService", "Direct launch fallback sent for: $targetPackage")
                     }
