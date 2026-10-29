@@ -17,7 +17,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -39,6 +38,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -588,23 +590,13 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
-                                                setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                                            }
-                                            startActivity(intent)
-                                            Log.d("FloatingService", "Successfully forced track playback for: $trackUri")
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Playback error: ${e.message}")
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                        }
+                                        playViaAppRemote(trackUri)
                                     }
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "API error: ${e.message}")
+                        Log.e("FloatingService", "Search/Play error: ${e.message}")
                         withContext(Dispatchers.Main) {
                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                         }
@@ -621,6 +613,25 @@ class FloatingCompanionService : Service() {
         } else if (lower.contains("skip") || lower.contains("next")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
         }
+    }
+
+    private fun playViaAppRemote(trackUri: String) {
+        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+            .setRedirectUri("caprimobile://callback")
+            .showAuthView(false)
+            .build()
+
+        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
+            override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
+                spotifyAppRemote.playerApi.play(trackUri)
+                Log.d("FloatingService", "App Remote successfully commanded track: $trackUri")
+            }
+
+            override fun onFailure(throwable: Throwable) {
+                Log.e("FloatingService", "App Remote connection dropped: ${throwable.message}")
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+            }
+        })
     }
 
     private fun launchAppByName(appName: String) {
@@ -1237,12 +1248,12 @@ class FloatingCompanionService : Service() {
             try {
                 // 1. Fetch AI dialogue first so she talks smoothly
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
-                if (dismissed) return$launch
+                if (dismissed) return@launch
                 
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or direct deep-link music routing
+                // 2. Execute app launch or App Remote command routing
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
@@ -1307,7 +1318,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1371,7 +1382,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        charParams = null
+        chatParams = null
 
         super.onDestroy()
     }
