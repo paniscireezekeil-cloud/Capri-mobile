@@ -1,38 +1,3 @@
-plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-    id 'com.google.gms.google-services'
-}
-
-android {
-    namespace 'com.example.caprimobile'
-    compileSdk 34
-
-    defaultConfig {
-        applicationId "com.example.caprimobile"
-        minSdk 26
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-    
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-    
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-}
-
 dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
@@ -43,6 +8,8 @@ dependencies {
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-appcheck-debug'
     
-    // Spotify Auth Library
+    // Spotify App Remote & Auth SDKs
     implementation 'com.spotify.android:auth:1.2.5'
+    implementation files('libs/spotify-app-remote-release-0.7.2.aar')
+    implementation 'com.google.code.gson:gson:2.10.1'
 }
