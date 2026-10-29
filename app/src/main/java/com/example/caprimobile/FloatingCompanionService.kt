@@ -38,6 +38,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -586,7 +589,9 @@ class FloatingCompanionService : Service() {
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
-                                    executePlaybackViaWebAPI(accessToken, trackUri)
+                                    withContext(Dispatchers.Main) {
+                                        playViaAppRemote(trackUri)
+                                    }
                                 }
                             }
                         }
@@ -610,43 +615,24 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private suspend fun executePlaybackViaWebAPI(accessToken: String, trackUri: String) {
-        withContext(Dispatchers.IO) {
-            var playConn: HttpURLConnection? = null
-            try {
-                val playUrl = URL("https://api.spotify.com/v1/me/player/play")
-                playConn = (playUrl.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "PUT"
-                    setRequestProperty("Authorization", "Bearer $accessToken")
-                    setRequestProperty("Content-Type", "application/json")
-                    connectTimeout = 3000
-                    readTimeout = 3000
-                    doOutput = true
-                }
+    private fun playViaAppRemote(trackUri: String) {
+        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+            .setRedirectUri("caprimobile://callback")
+            .showAuthView(false)
+            .build()
 
-                val payload = JSONObject().apply {
-                    put("uris", JSONArray().apply { put(trackUri) })
-                }
-
-                OutputStreamWriter(playConn.outputStream).use { it.write(payload.toString()) }
-
-                if (playConn.responseCode in 200..299) {
-                    Log.d("FloatingService", "Direct Web API play command succeeded for: $trackUri")
-                } else {
-                    // Fallback to background dispatch if active Connect session isn't linked
-                    withContext(Dispatchers.Main) {
-                        sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("FloatingService", "Web API playback error: ${e.message}")
-                withContext(Dispatchers.Main) {
-                    sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                }
-            } finally {
-                try { playConn?.disconnect() } catch (_: Exception) {}
+        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
+            override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
+                // Commands Spotify directly over the local IPC socket to play the requested track invisibly
+                spotifyAppRemote.playerApi.play(trackUri)
+                Log.d("FloatingService", "App Remote successfully commanded track: $trackUri")
             }
-        }
+
+            override fun onFailure(throwable: Throwable) {
+                Log.e("FloatingService", "App Remote connection dropped: ${throwable.message}")
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+            }
+        })
     }
 
     private fun launchAppByName(appName: String) {
@@ -1268,7 +1254,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or Web API playback command routing
+                // 2. Execute app launch or App Remote command routing
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
@@ -1333,7 +1319,7 @@ class FloatingCompanionService : Service() {
         chatInput = null
         chatWindow = null
         charParams = null
-        chatParams = null
+        charParams = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1349,7 +1335,7 @@ class FloatingCompanionService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Capri Companion",
-                NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Keeps Capri's floating companion active."
             }
