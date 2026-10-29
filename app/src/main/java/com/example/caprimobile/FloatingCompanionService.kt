@@ -587,9 +587,24 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
-                                        sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                        try {
+                                            // Send explicit package broadcast to force background track switch without UI popups
+                                            val broadcastIntent = Intent("com.spotify.mobile.android.ui.action.PLAY").apply {
+                                                setPackage("com.spotify.music")
+                                                putExtra("spotify_uri", trackUri)
+                                            }
+                                            sendBroadcast(broadcastIntent)
+
+                                            handler.postDelayed({
+                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                            }, 200L)
+
+                                            Log.d("FloatingService", "Background broadcast play sent for: $trackUri")
+                                        } catch (e: Exception) {
+                                            Log.e("FloatingService", "Broadcast error: ${e.message}")
+                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                        }
                                     }
-                                    Log.d("FloatingService", "Track verified: $trackUri (Media key unpaused)")
                                 }
                             }
                         }
@@ -1232,7 +1247,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or safe background music control
+                // 2. Execute app launch or background broadcast music control
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
