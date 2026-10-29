@@ -74,29 +74,15 @@ class MainActivity : Activity() {
             setTextColor(Color.LTGRAY)
         }
 
-        root.addView(title, layoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
-        ))
+        root.addView(title, layoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
+        root.addView(subtitle, layoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
 
-        root.addView(subtitle, layoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(42)
-        ))
-
-        overlayButton = createButton("ALLOW FLOATING OVERLAY") {
-            openOverlaySettings()
-        }
-
+        overlayButton = createButton("ALLOW FLOATING OVERLAY") { openOverlaySettings() }
         notificationButton = createButton("ALLOW NOTIFICATION ACCESS") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-
-        spotifyAuthButton = createButton("CONNECT SPOTIFY PREMIUM") {
-            authorizeSpotify()
-        }
-
-        spawnButton = createButton("SPAWN CAPRI") {
-            spawnCapri()
-        }
+        spotifyAuthButton = createButton("CONNECT SPOTIFY PREMIUM") { authorizeSpotify() }
+        spawnButton = createButton("SPAWN CAPRI") { spawnCapri() }
 
         root.addView(overlayButton, buttonParams())
         root.addView(notificationButton, buttonParams())
@@ -111,10 +97,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(18), 0, dp(8))
         }
 
-        root.addView(note, layoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        root.addView(note, layoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         setContentView(root)
         refreshPermissionStatus()
@@ -131,7 +114,7 @@ class MainActivity : Activity() {
         codeVerifier = verifier
         val challenge = generateCodeChallenge(verifier)
 
-        val scopes = Uri.encode("user-modify-playback-state user-read-playback-state user-read-currently-playing")
+        val scopes = "user-modify-playback-state user-read-playback-state user-read-currently-playing streaming"
         val authUrl = Uri.parse("https://accounts.spotify.com/authorize").buildUpon()
             .appendQueryParameter("client_id", CLIENT_ID)
             .appendQueryParameter("response_type", "code")
@@ -153,8 +136,6 @@ class MainActivity : Activity() {
             val verifier = codeVerifier
             if (code != null && verifier != null) {
                 exchangeCodeForTokens(code, verifier)
-            } else if (code != null) {
-                Log.e("MainActivity", "Code verifier was lost during redirect.")
             }
         }
     }
@@ -191,14 +172,10 @@ class MainActivity : Activity() {
                         .putString("spotify_refresh_token", refreshToken)
                         .apply()
 
-                    Log.d("MainActivity", "Spotify authorized! Tokens saved successfully.")
-
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Spotify Connected!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "Spotify Re-connected!", Toast.LENGTH_SHORT).show()
                         refreshPermissionStatus()
                     }
-                } else {
-                    Log.e("MainActivity", "Token exchange failed code: ${conn.responseCode}")
                 }
             } catch (e: Exception) {
                 Log.e("MainActivity", "Token exchange error: ${e.message}", e)
@@ -230,115 +207,65 @@ class MainActivity : Activity() {
         }
 
         try {
-            val serviceIntent = Intent(
-                this,
-                FloatingCompanionService::class.java
-            )
-
+            val serviceIntent = Intent(this, FloatingCompanionService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)
             } else {
                 startService(serviceIntent)
             }
-
         } catch (e: Exception) {
             Log.e("MainActivity", "Failed to spawn Capri", e)
         }
     }
 
-    private fun createButton(
-        label: String,
-        action: () -> Unit
-    ): Button {
+    private fun createButton(label: String, action: () -> Unit): Button {
         return Button(this).apply {
             text = label
             textSize = 14f
             isAllCaps = false
             setTextColor(white)
-
             background = GradientDrawable().apply {
                 setColor(darkGray)
                 cornerRadius = dp(5).toFloat()
             }
-
             setOnClickListener { action() }
         }
     }
 
-    private fun buttonParams() =
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(54)
-        ).apply {
-            topMargin = dp(9)
-        }
+    private fun buttonParams() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
+        topMargin = dp(9)
+    }
 
-    private fun layoutParams(width: Int, height: Int) =
-        LinearLayout.LayoutParams(width, height)
+    private fun layoutParams(width: Int, height: Int) = LinearLayout.LayoutParams(width, height)
 
     private fun openOverlaySettings() {
         if (!Settings.canDrawOverlays(this)) {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            )
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
     }
 
     private fun refreshPermissionStatus() {
         if (!::overlayButton.isInitialized) return
-
-        overlayButton.text =
-            if (Settings.canDrawOverlays(this)) {
-                "FLOATING OVERLAY: ENABLED"
-            } else {
-                "ALLOW FLOATING OVERLAY"
-            }
-
-        notificationButton.text =
-            if (isNotificationAccessEnabled()) {
-                "NOTIFICATION ACCESS: ENABLED"
-            } else {
-                "ALLOW NOTIFICATION ACCESS"
-            }
+        overlayButton.text = if (Settings.canDrawOverlays(this)) "FLOATING OVERLAY: ENABLED" else "ALLOW FLOATING OVERLAY"
+        notificationButton.text = if (isNotificationAccessEnabled()) "NOTIFICATION ACCESS: ENABLED" else "ALLOW NOTIFICATION ACCESS"
 
         val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
-        val hasSpotifyToken = !prefs.getString("spotify_user_token", "").isNull_Empty()
+        val hasSpotifyToken = !prefs.getString("spotify_user_token", "").isNullOrEmpty()
 
-        spotifyAuthButton.text =
-            if (hasSpotifyToken) {
-                "SPOTIFY PREMIUM: CONNECTED"
-            } else {
-                "CONNECT SPOTIFY PREMIUM"
-            }
-
+        spotifyAuthButton.text = if (hasSpotifyToken) "SPOTIFY PREMIUM: CONNECTED" else "CONNECT SPOTIFY PREMIUM"
         spawnButton.isEnabled = Settings.canDrawOverlays(this)
         spawnButton.alpha = if (spawnButton.isEnabled) 1f else 0.5f
     }
 
     private fun isNotificationAccessEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(
-            contentResolver,
-            "enabled_notification_listeners"
-        ) ?: return false
-
-        return enabled.split(":").any { entry ->
-            ComponentName.unflattenFromString(entry)
-                ?.packageName == packageName
-        }
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        return enabled.split(":").any { ComponentName.unflattenFromString(it)?.packageName == packageName }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::overlayButton.isInitialized) {
-            refreshPermissionStatus()
-        }
+        if (::overlayButton.isInitialized) refreshPermissionStatus()
     }
 
-    private fun CharSequence?.isNull_Empty(): Boolean = this == null || this.isEmpty()
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }
