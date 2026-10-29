@@ -38,9 +38,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import com.spotify.android.appremote.api.ConnectionParams
-import com.spotify.android.appremote.api.Connector
-import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -616,22 +613,23 @@ class FloatingCompanionService : Service() {
     }
 
     private fun playViaAppRemote(trackUri: String) {
-        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
-            .setRedirectUri("caprimobile://callback")
-            .showAuthView(false)
-            .build()
-
-        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
-            override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
-                spotifyAppRemote.playerApi.play(trackUri)
-                Log.d("FloatingService", "App Remote successfully commanded track: $trackUri")
+        try {
+            // Direct background intent delivery to Spotify's playback service without activity window focus
+            val backgroundIntent = Intent("com.spotify.mobile.android.ui.action.PLAY").apply {
+                setPackage("com.spotify.music")
+                putExtra("spotify_uri", trackUri)
             }
+            sendBroadcast(backgroundIntent)
 
-            override fun onFailure(throwable: Throwable) {
-                Log.e("FloatingService", "App Remote connection dropped: ${throwable.message}")
+            handler.postDelayed({
                 sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-            }
-        })
+            }, 250L)
+
+            Log.d("FloatingService", "Background playback intent triggered for: $trackUri")
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Playback dispatch error: ${e.message}")
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+        }
     }
 
     private fun launchAppByName(appName: String) {
@@ -1253,7 +1251,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or App Remote command routing
+                // 2. Execute app launch or background playback command routing
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
