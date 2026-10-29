@@ -17,7 +17,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -112,6 +111,7 @@ class FloatingCompanionService : Service() {
 
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
+    private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
         You are Capri, a close friend and digital companion to D. 
@@ -563,8 +563,8 @@ class FloatingCompanionService : Service() {
                             val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
                             val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
                             setRequestProperty("Authorization", "Basic $encodedAuth")
-                            connectTimeout = 3000
-                            readTimeout = 3000
+                            connectTimeout = 5000
+                            readTimeout = 5000
                             doOutput = true
                         }
                         OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
@@ -578,58 +578,36 @@ class FloatingCompanionService : Service() {
                             searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 setRequestProperty("Authorization", "Bearer $accessToken")
-                                connectTimeout = 3000
-                                readTimeout = 3000
+                                connectTimeout = 5000
+                                readTimeout = 5000
                             }
 
                             if (searchConn.responseCode == 200) {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
-                                    val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            // 1. Open Spotify to play the requested track
-                                            val bgIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
-                                                setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-                                            startActivity(bgIntent)
-
-                                            handler.postDelayed({
-                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                            }, 250L)
-
-                                            // 2. Instantly minimize/close Spotify right after it opens
-                                            handler.postDelayed({
-                                                val closeIntent = Intent(Intent.ACTION_MAIN).apply {
-                                                    addCategory(Intent.CATEGORY_HOME)
-                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                                                }
-                                                startActivity(closeIntent)
-                                                Log.d("FloatingService", "Spotify popped open, played, and auto-minimized.")
-                                            }, 700L)
-
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Launch error: ${e.message}")
                                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                        } catch (e: Exception) {
+                                            Log.e("FloatingService", "Media key error: ${e.message}")
                                         }
                                     }
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "API error: ${e.message}")
-                        withContext(Dispatchers.Main) {
-                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                        }
+                        Log.e("FloatingService", "Spotify API error: ${e.message}")
                     } finally {
                         try { tokenConn?.disconnect() } catch (_: Exception) {}
                         try { searchConn?.disconnect() } catch (_: Exception) {}
                     }
                 }
-            } else {
-                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+            }
+        } else if (lower.startsWith("open ") || lower.contains("launch ")) {
+            val appTarget = lower.substringAfter("open ").substringAfter("launch ").trim()
+            if (appTarget.isNotEmpty()) {
+                launchAppByName(appTarget)
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
@@ -641,58 +619,33 @@ class FloatingCompanionService : Service() {
     private fun launchAppByName(appName: String) {
         try {
             val pm = packageManager
-            val targetLower = appName.lowercase().trim()
+            val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val resolveInfos = pm.queryIntentActivities(intent, 0)
             var targetPackage: String? = null
 
-            if (targetLower.contains("youtube")) {
-                targetPackage = "com.google.android.youtube"
-            } else if (targetLower.contains("spotify")) {
-                targetPackage = "com.spotify.music"
-            } else if (targetLower.contains("discord")) {
-                targetPackage = "com.discord"
-            } else if (targetLower.contains("messenger")) {
-                targetPackage = "com.facebook.orca"
-            } else if (targetLower.contains("instagram")) {
-                targetPackage = "com.instagram.android"
-            }
-
-            if (targetPackage == null) {
-                val searchIntent = Intent(Intent.ACTION_MAIN, null).apply {
-                    addCategory(Intent.CATEGORY_LAUNCHER)
-                }
-                val resolveInfos = pm.queryIntentActivities(searchIntent, 0)
-                for (resolveInfo in resolveInfos) {
-                    val label = resolveInfo.loadLabel(pm).toString().lowercase()
-                    val packageName = resolveInfo.activityInfo.packageName.lowercase()
-                    if (label.contains(targetLower) || packageName.contains(targetLower)) {
-                        targetPackage = resolveInfo.activityInfo.packageName
-                        break
-                    }
+            for (resolveInfo in resolveInfos) {
+                val label = resolveInfo.loadLabel(pm).toString().lowercase()
+                val packageName = resolveInfo.activityInfo.packageName.lowercase()
+                if (label.contains(appName.lowercase()) || packageName.contains(appName.lowercase())) {
+                    targetPackage = resolveInfo.activityInfo.packageName
+                    break
                 }
             }
 
             if (targetPackage != null) {
-                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)?.apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    )
-                }
-
+                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
                 if (launchIntent != null) {
-                    val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
-                        putExtra("TARGET_INTENT", launchIntent)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                    }
-                    startActivity(trampolineIntent)
-                    Log.d("FloatingService", "Successfully triggered Trampoline launch for: $targetPackage")
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                    Log.d("FloatingService", "Successfully launched app: $targetPackage")
                 }
             } else {
                 Log.w("FloatingService", "Could not find installed app matching: $appName")
             }
         } catch (e: Exception) {
-            Log.e("FloatingService", "App launch execution error: ${e.message}", e)
+            Log.e("FloatingService", "App launch error: ${e.message}")
         }
     }
 
@@ -739,13 +692,12 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 3000
-                readTimeout = 3000
+                connectTimeout = 6000
+                readTimeout = 6000
             }
 
-            val lowerMsg = userMessage.lowercase()
-            val enhancedPrompt = if (lowerMsg.contains("open") || lowerMsg.contains("launch")) {
-                "$personality\nD told you to open an app. You are opening it for them right now, but you MUST give a sarcastic, snarky 1-sentence complaint about doing it."
+            val enhancedPrompt = if (userMessage.lowercase().startsWith("open") || userMessage.lowercase().contains("launch")) {
+                "$personality\nD told you to open an app. You are opening it for them, but you MUST give a sarcastic, snarky 1-sentence complaint about doing it while you do it."
             } else {
                 personality
             }
@@ -763,18 +715,18 @@ class FloatingCompanionService : Service() {
             }
 
             OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-            if (conn.responseCode != 200) return "Tch. Whatever."
+            if (conn.responseCode != 200) return "Tch. Fine."
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
             var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
             if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.contains("rule:") || rawReply.length > 120) {
-                rawReply = "Fine."
+                rawReply = "Fine, opening it."
             }
             rawReply
         } catch (_: Exception) {
-            "Hurry up."
+            "Fine. Doing it."
         }
     }
 
@@ -786,8 +738,8 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 3000
-                readTimeout = 3000
+                connectTimeout = 6000
+                readTimeout = 6000
             }
 
             val jsonBody = JSONObject().apply {
@@ -805,7 +757,7 @@ class FloatingCompanionService : Service() {
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
             if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.length > 120) {
-                rawReply = "Still watching."
+                rawReply = "Still watching you code."
             }
             rawReply
         } catch (_: Exception) {
@@ -1248,25 +1200,14 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
+        handleCommandRouting(message)
+
         scope.launch {
             try {
-                // 1. Fetch AI dialogue first so she talks smoothly
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
-                
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
-
-                // 2. Execute app launch or auto-minimizing Spotify music switch
-                val lower = message.lowercase()
-                if (lower.contains("open") || lower.contains("launch")) {
-                    val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
-                    if (appTarget.isNotEmpty()) {
-                        launchAppByName(appTarget)
-                    }
-                } else {
-                    handleCommandRouting(message)
-                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1274,7 +1215,7 @@ class FloatingCompanionService : Service() {
                     history.removeAt(history.lastIndex)
                 }
                 if (!dismissed) {
-                    showDialogue("DORMANT", null, "Fine.")
+                    showDialogue("DORMANT", null, "Glitch.")
                 }
             } finally {
                 busy = false
