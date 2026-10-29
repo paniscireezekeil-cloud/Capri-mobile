@@ -36,11 +36,13 @@
 
         </activity>
 
-        <!-- Trampoline Activity to bypass Android background activity launch restrictions -->
+        <!-- Trampoline Activity optimized for translucent, background-only execution -->
         <activity
             android:name=".TrampolineActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleInstance"
             android:taskAffinity=""
             android:exported="false" />
 
