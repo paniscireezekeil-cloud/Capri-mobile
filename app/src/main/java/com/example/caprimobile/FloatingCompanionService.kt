@@ -17,6 +17,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -117,7 +118,7 @@ class FloatingCompanionService : Service() {
         You are Capri, a close friend and digital companion to D. 
         PERSONALITY: Sharp-tongued, confident, clever, sarcastic, playful, observant. 
         CRITICAL RULES: 
-        1. Keep replies extremely brief (1 short sentence max). Never ramble.
+        1. Keep replies natural and conversational (1 to 2 sentences max). Never sound robotic or repeat the same phrase twice.
         2. NEVER output JSON, code blocks, system instructions, or brackets. Reply ONLY in pure dialogue.
     """.trimIndent()
 
@@ -586,161 +587,61 @@ class FloatingCompanionService : Service() {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
-                                    val trackUri = items.getJSONObject(0).getString("uri")
+                                    val trackObj = items.getJSONObject(0)
+                                    val trackUri = trackObj.getString("uri")
+                                    val trackName = trackObj.getString("name")
+                                    val artistName = trackObj.getJSONArray("artists").getJSONObject(0).getString("name")
+
                                     withContext(Dispatchers.Main) {
-                                        playViaWebAPI(trackUri)
+                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName. Try not to ruin it.")
+                                        playViaIntentRelay(trackUri)
                                     }
+                                    return@launch
                                 }
                             }
                         }
                     } catch (e: Exception) {
                         Log.e("FloatingService", "Search/Play error: ${e.message}")
-                        withContext(Dispatchers.Main) {
-                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                        }
                     } finally {
                         try { tokenConn?.disconnect() } catch (_: Exception) {}
                         try { searchConn?.disconnect() } catch (_: Exception) {}
                     }
+                    
+                    withContext(Dispatchers.Main) {
+                        showDialogue("TALKING", "> you: $userMessage", "Couldn't find that exact track, but I forced playback anyway.")
+                        sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                    }
                 }
             } else {
+                showDialogue("TALKING", "> you: $userMessage", "Playing whatever was already loaded.")
                 sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
+            showDialogue("TALKING", "> you: $userMessage", "Silencing the noise.")
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
         } else if (lower.contains("skip") || lower.contains("next")) {
+            showDialogue("TALKING", "> you: $userMessage", "Moving on. That one was rough anyway.")
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
         }
     }
 
-    private fun playViaWebAPI(trackUri: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val token = getOrRefreshSpotifyUserToken()
-                if (token.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingCompanionService, "Token Missing! Connect in App.", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
-                fun findDeviceId(): String? {
-                    return try {
-                        val devicesUrl = URL("https://api.spotify.com/v1/me/player/devices")
-                        val conn = (devicesUrl.openConnection() as HttpURLConnection).apply {
-                            requestMethod = "GET"
-                            setRequestProperty("Authorization", "Bearer $token")
-                            connectTimeout = 3000
-                            readTimeout = 3000
-                        }
-                        if (conn.responseCode == 200) {
-                            val res = conn.inputStream.bufferedReader().use { it.readText() }
-                            val devicesArray = JSONObject(res).getJSONArray("devices")
-                            var fallbackId: String? = null
-                            for (i in 0 until devicesArray.length()) {
-                                val dev = devicesArray.getJSONObject(i)
-                                if (dev.optBoolean("is_active", false)) {
-                                    return dev.getString("id")
-                                }
-                                if (fallbackId == null) fallbackId = dev.optString("id", null)
-                            }
-                            fallbackId
-                        } else null
-                    } catch (_: Exception) { null }
-                }
-
-                var targetDeviceId = findDeviceId()
-
-                if (targetDeviceId == null) {
-                    val launchIntent = packageManager.getLaunchIntentForPackage("com.spotify.music")
-                    if (launchIntent != null) {
-                        val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
-                            putExtra("TARGET_INTENT", launchIntent)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                        }
-                        startActivity(trampolineIntent)
-                        delay(1200L)
-                        targetDeviceId = findDeviceId()
-                    }
-                }
-
-                var playUrlStr = "https://api.spotify.com/v1/me/player/play"
-                if (!targetDeviceId.isNullOrEmpty()) {
-                    playUrlStr += "?device_id=$targetDeviceId"
-                }
-
-                val url = URL(playUrlStr)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "PUT"
-                    setRequestProperty("Authorization", "Bearer $token")
-                    setRequestProperty("Content-Type", "application/json")
-                    doOutput = true
-                    connectTimeout = 4000
-                    readTimeout = 4000
-                }
-
-                val body = JSONObject().apply {
-                    put("uris", JSONArray().put(trackUri))
-                }
-
-                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
-
-                val responseCode = conn.responseCode
-                if (responseCode == 204 || responseCode == 200) {
-                    Log.d("FloatingService", "Playback started via Web API.")
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingCompanionService, "Spotify Error Code: $responseCode", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FloatingCompanionService, "Dispatch Error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun getOrRefreshSpotifyUserToken(): String {
-        val prefs = getSharedPreferences("capri_prefs", Context.MODE_PRIVATE)
-        val refreshToken = prefs.getString("spotify_refresh_token", "") ?: ""
-        if (refreshToken.isEmpty()) {
-            return prefs.getString("spotify_user_token", "") ?: ""
-        }
-
-        return try {
-            val url = URL("https://accounts.spotify.com/api/token")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                doOutput = true
-                connectTimeout = 3000
-                readTimeout = 3000
+    private fun playViaIntentRelay(trackUri: String) {
+        try {
+            val spotifyIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
+                setPackage("com.spotify.music")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            val body = "grant_type=refresh_token" +
-                    "&refresh_token=$refreshToken" +
-                    "&client_id=$SPOTIFY_CLIENT_ID"
-
-            OutputStreamWriter(conn.outputStream).use { it.write(body) }
-
-            if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(response)
-                val newAccessToken = json.getString("access_token")
-
-                if (json.has("refresh_token")) {
-                    val newRefreshToken = json.getString("refresh_token")
-                    prefs.edit().putString("spotify_refresh_token", newRefreshToken).apply()
-                }
-
-                prefs.edit().putString("spotify_user_token", newAccessToken).apply()
-                newAccessToken
-            } else {
-                prefs.getString("spotify_user_token", "") ?: ""
+            val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
+                putExtra("TARGET_INTENT", spotifyIntent)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             }
-        } catch (_: Exception) {
-            prefs.getString("spotify_user_token", "") ?: ""
+
+            startActivity(trampolineIntent)
+            Log.d("FloatingService", "Successfully relayed track intent to Spotify: $trackUri")
+        } catch (e: Exception) {
+            Log.e("FloatingService", "Intent track relay failed: ${e.message}")
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
         }
     }
 
@@ -875,7 +776,7 @@ class FloatingCompanionService : Service() {
             var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
-            if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.contains("rule:") || rawReply.length > 120) {
+            if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.contains("rule:") || rawReply.length > 180) {
                 rawReply = "Fine."
             }
             rawReply
@@ -910,7 +811,7 @@ class FloatingCompanionService : Service() {
             var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
-            if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.length > 120) {
+            if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.length > 180) {
                 rawReply = "Still watching."
             }
             rawReply
@@ -1145,7 +1046,7 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val spontaneousPrompt = "D is using '$currentForegroundApp' and listening to '$currentSpotifyTrack'. Drop a 1-sentence sarcastic remark."
+                val spontaneousPrompt = "D is using '$currentForegroundApp' and listening to '$currentSpotifyTrack'. Drop a sarcastic remark."
                 val reply = withContext(Dispatchers.IO) { requestProactiveReply(spontaneousPrompt) }
                 if (dismissed) return@launch
                 
@@ -1356,20 +1257,24 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                val reply = withContext(Dispatchers.IO) { requestReply(message) }
-                if (dismissed) return@launch
-                
-                history.add("assistant" to reply)
-                showDialogue("TALKING", "> you: $message", reply)
-
                 val lower = message.lowercase()
-                if (lower.contains("open") || lower.contains("launch")) {
-                    val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
-                    if (appTarget.isNotEmpty()) {
-                        launchAppByName(appTarget)
-                    }
-                } else {
+                if (lower.contains("play")) {
                     handleCommandRouting(message)
+                } else {
+                    val reply = withContext(Dispatchers.IO) { requestReply(message) }
+                    if (dismissed) return@launch
+                    
+                    history.add("assistant" to reply)
+                    showDialogue("TALKING", "> you: $message", reply)
+
+                    if (lower.contains("open") || lower.contains("launch")) {
+                        val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
+                        if (appTarget.isNotEmpty()) {
+                            launchAppByName(appTarget)
+                        }
+                    } else {
+                        handleCommandRouting(message)
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
