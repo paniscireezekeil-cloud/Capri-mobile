@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -17,7 +18,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -589,32 +589,32 @@ class FloatingCompanionService : Service() {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            // 1. Send broadcast to load track URI into background daemon
-                                            val broadcastIntent = Intent("com.spotify.mobile.android.ui.action.PLAY").apply {
-                                                setPackage("com.spotify.music")
-                                                putExtra("spotify_uri", trackUri)
+                                            // Target Spotify's background MediaButtonReceiver directly to avoid waking UI activity
+                                            val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                                                component = ComponentName(
+                                                    "com.spotify.music",
+                                                    "com.spotify.mediasession.mediasession.receiver.MediaButtonReceiver"
+                                                )
+                                                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
                                             }
-                                            sendBroadcast(broadcastIntent)
+                                            sendBroadcast(mediaButtonIntent)
 
-                                            // 2. Bounce suppressed intent through TrampolineActivity
-                                            val targetIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
-                                                setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_FROM_BACKGROUND)
+                                            val mediaButtonUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                                                component = ComponentName(
+                                                    "com.spotify.music",
+                                                    "com.spotify.mediasession.mediasession.receiver.MediaButtonReceiver"
+                                                )
+                                                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
                                             }
-                                            val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
-                                                putExtra("TARGET_INTENT", targetIntent)
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                            }
-                                            startActivity(trampolineIntent)
+                                            sendBroadcast(mediaButtonUp)
 
-                                            // 3. Trigger playback media key
                                             handler.postDelayed({
                                                 sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                            }, 250L)
+                                            }, 200L)
 
-                                            Log.d("FloatingService", "Combined background load & play executed for: $trackUri")
+                                            Log.d("FloatingService", "Targeted Spotify MediaButtonReceiver executed for: $trackUri")
                                         } catch (e: Exception) {
-                                            Log.e("FloatingService", "Combined execution error: ${e.message}")
+                                            Log.e("FloatingService", "Targeted broadcast error: ${e.message}")
                                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                         }
                                     }
@@ -1260,7 +1260,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or combined Spotify background command
+                // 2. Execute app launch or targeted media receiver command
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
