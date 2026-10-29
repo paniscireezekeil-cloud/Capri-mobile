@@ -17,6 +17,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -111,7 +112,6 @@ class FloatingCompanionService : Service() {
 
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
-    private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
         You are Capri, a close friend and digital companion to D. 
@@ -563,8 +563,8 @@ class FloatingCompanionService : Service() {
                             val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
                             val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
                             setRequestProperty("Authorization", "Basic $encodedAuth")
-                            connectTimeout = 5000
-                            readTimeout = 5000
+                            connectTimeout = 3000
+                            readTimeout = 3000
                             doOutput = true
                         }
                         OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
@@ -578,36 +578,61 @@ class FloatingCompanionService : Service() {
                             searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 setRequestProperty("Authorization", "Bearer $accessToken")
-                                connectTimeout = 5000
-                                readTimeout = 5000
+                                connectTimeout = 3000
+                                readTimeout = 3000
                             }
 
                             if (searchConn.responseCode == 200) {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
+                                    val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                            // 1. Send broadcast to load track URI into background daemon
+                                            val broadcastIntent = Intent("com.spotify.mobile.android.ui.action.PLAY").apply {
+                                                setPackage("com.spotify.music")
+                                                putExtra("spotify_uri", trackUri)
+                                            }
+                                            sendBroadcast(broadcastIntent)
+
+                                            // 2. Bounce suppressed intent through TrampolineActivity
+                                            val targetIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
+                                                setPackage("com.spotify.music")
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_FROM_BACKGROUND)
+                                            }
+                                            val trampolineIntent = Intent(this@FloatingCompanionService, TrampolineActivity::class.java).apply {
+                                                putExtra("TARGET_INTENT", targetIntent)
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                            }
+                                            startActivity(trampolineIntent)
+
+                                            // 3. Trigger playback media key
+                                            handler.postDelayed({
+                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                                            }, 250L)
+
+                                            Log.d("FloatingService", "Combined background load & play executed for: $trackUri")
                                         } catch (e: Exception) {
-                                            Log.e("FloatingService", "Media key error: ${e.message}")
+                                            Log.e("FloatingService", "Combined execution error: ${e.message}")
+                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                                         }
                                     }
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "Spotify API error: ${e.message}")
+                        Log.e("FloatingService", "API error: ${e.message}")
+                        withContext(Dispatchers.Main) {
+                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                        }
                     } finally {
                         try { tokenConn?.disconnect() } catch (_: Exception) {}
                         try { searchConn?.disconnect() } catch (_: Exception) {}
                     }
                 }
-            }
-        } else if (lower.contains("open") || lower.contains("launch")) {
-            val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
-            if (appTarget.isNotEmpty()) {
-                launchAppByName(appTarget)
+            } else {
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
             }
         } else if (lower.contains("pause") || lower.contains("stop")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
@@ -635,10 +660,10 @@ class FloatingCompanionService : Service() {
             }
 
             if (targetPackage == null) {
-                val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                val searchIntent = Intent(Intent.ACTION_MAIN, null).apply {
                     addCategory(Intent.CATEGORY_LAUNCHER)
                 }
-                val resolveInfos = pm.queryIntentActivities(intent, 0)
+                val resolveInfos = pm.queryIntentActivities(searchIntent, 0)
                 for (resolveInfo in resolveInfos) {
                     val label = resolveInfo.loadLabel(pm).toString().lowercase()
                     val packageName = resolveInfo.activityInfo.packageName.lowercase()
@@ -650,23 +675,27 @@ class FloatingCompanionService : Service() {
             }
 
             if (targetPackage != null) {
-                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
+                val launchIntent = pm.getLaunchIntentForPackage(targetPackage)?.apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+                }
+
                 if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    
-                    // Route through TrampolineActivity to bypass Android background activity launch restrictions
                     val trampolineIntent = Intent(this, TrampolineActivity::class.java).apply {
                         putExtra("TARGET_INTENT", launchIntent)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                     }
                     startActivity(trampolineIntent)
-                    Log.d("FloatingService", "Successfully triggered trampoline launch for: $targetPackage")
+                    Log.d("FloatingService", "Successfully triggered Trampoline launch for: $targetPackage")
                 }
             } else {
                 Log.w("FloatingService", "Could not find installed app matching: $appName")
             }
         } catch (e: Exception) {
-            Log.e("FloatingService", "App launch error: ${e.message}", e)
+            Log.e("FloatingService", "App launch execution error: ${e.message}", e)
         }
     }
 
@@ -713,8 +742,8 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 6000
-                readTimeout = 6000
+                connectTimeout = 3000
+                readTimeout = 3000
             }
 
             val lowerMsg = userMessage.lowercase()
@@ -737,18 +766,18 @@ class FloatingCompanionService : Service() {
             }
 
             OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-            if (conn.responseCode != 200) return "Tch. Fine."
+            if (conn.responseCode != 200) return "Tch. Whatever."
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
             var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
             if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.contains("rule:") || rawReply.length > 120) {
-                rawReply = "Fine, opening it."
+                rawReply = "Fine."
             }
             rawReply
         } catch (_: Exception) {
-            "Fine. Doing it."
+            "Hurry up."
         }
     }
 
@@ -760,8 +789,8 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 6000
-                readTimeout = 6000
+                connectTimeout = 3000
+                readTimeout = 3000
             }
 
             val jsonBody = JSONObject().apply {
@@ -779,7 +808,7 @@ class FloatingCompanionService : Service() {
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
             if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.length > 120) {
-                rawReply = "Still watching you code."
+                rawReply = "Still watching."
             }
             rawReply
         } catch (_: Exception) {
@@ -1222,15 +1251,25 @@ class FloatingCompanionService : Service() {
         history.add("user" to message)
         showDialogue("THINKING", "> you: $message", "Thinking...")
 
-        // Execute command routing synchronously on UI thread immediately
-        handleCommandRouting(message)
-
         scope.launch {
             try {
+                // 1. Fetch AI dialogue first so she talks smoothly
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
+                
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
+
+                // 2. Execute app launch or combined Spotify background command
+                val lower = message.lowercase()
+                if (lower.contains("open") || lower.contains("launch")) {
+                    val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
+                    if (appTarget.isNotEmpty()) {
+                        launchAppByName(appTarget)
+                    }
+                } else {
+                    handleCommandRouting(message)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1238,7 +1277,7 @@ class FloatingCompanionService : Service() {
                     history.removeAt(history.lastIndex)
                 }
                 if (!dismissed) {
-                    showDialogue("DORMANT", null, "Glitch.")
+                    showDialogue("DORMANT", null, "Fine.")
                 }
             } finally {
                 busy = false
