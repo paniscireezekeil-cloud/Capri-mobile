@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -39,6 +38,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -588,41 +590,13 @@ class FloatingCompanionService : Service() {
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
                                     withContext(Dispatchers.Main) {
-                                        try {
-                                            // Target Spotify's background MediaButtonReceiver directly to avoid waking UI activity
-                                            val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                                                component = ComponentName(
-                                                    "com.spotify.music",
-                                                    "com.spotify.mediasession.mediasession.receiver.MediaButtonReceiver"
-                                                )
-                                                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-                                            }
-                                            sendBroadcast(mediaButtonIntent)
-
-                                            val mediaButtonUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                                                component = ComponentName(
-                                                    "com.spotify.music",
-                                                    "com.spotify.mediasession.mediasession.receiver.MediaButtonReceiver"
-                                                )
-                                                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-                                            }
-                                            sendBroadcast(mediaButtonUp)
-
-                                            handler.postDelayed({
-                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                            }, 200L)
-
-                                            Log.d("FloatingService", "Targeted Spotify MediaButtonReceiver executed for: $trackUri")
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Targeted broadcast error: ${e.message}")
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                        }
+                                        playViaAppRemote(trackUri)
                                     }
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("FloatingService", "API error: ${e.message}")
+                        Log.e("FloatingService", "Search/Play error: ${e.message}")
                         withContext(Dispatchers.Main) {
                             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                         }
@@ -639,6 +613,26 @@ class FloatingCompanionService : Service() {
         } else if (lower.contains("skip") || lower.contains("next")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
         }
+    }
+
+    private fun playViaAppRemote(trackUri: String) {
+        val connectionParams = ConnectionParams.Builder(SPOTIFY_CLIENT_ID)
+            .setRedirectUri("caprimobile://callback")
+            .showAuthView(false)
+            .build()
+
+        SpotifyAppRemote.connect(this, connectionParams, object : Connector.ConnectionListener {
+            override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
+                spotifyAppRemote.playerApi.play(trackUri)
+                Log.d("FloatingService", "App Remote successfully commanded track: $trackUri")
+                SpotifyAppRemote.disconnect(spotifyAppRemote)
+            }
+
+            override fun onFailure(throwable: Throwable) {
+                Log.e("FloatingService", "App Remote connection dropped: ${throwable.message}")
+                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+            }
+        })
     }
 
     private fun launchAppByName(appName: String) {
@@ -1260,7 +1254,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or targeted media receiver command
+                // 2. Execute app launch or App Remote command routing
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
