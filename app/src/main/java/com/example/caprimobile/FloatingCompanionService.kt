@@ -17,13 +17,11 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
-import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -53,7 +51,6 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -109,10 +106,6 @@ class FloatingCompanionService : Service() {
 
     private var isAlternateForm = false
     private var lastTapTime = 0L
-
-    private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
-    private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
-    private val SPOTIFY_REDIRECT_URI = "com.example.caprimobile://callback"
 
     private val personality = """
         You are Capri, a close friend and digital companion to D. 
@@ -546,82 +539,8 @@ class FloatingCompanionService : Service() {
         val lower = userMessage.lowercase()
 
         if (lower.contains("play")) {
-            var query = lower.substringAfter("play").trim()
-            query = query.replace("from spotify", "").replace("on spotify", "").replace("in spotify", "").replace("spotify", "").trim()
-            if (query.endsWith(" in") || query.endsWith(" on") || query.endsWith(" at")) {
-                query = query.substring(0, query.length - 3).trim()
-            }
-
-            if (query.isNotEmpty() && query != "music" && query != "song") {
-                scope.launch(Dispatchers.IO) {
-                    var tokenConn: HttpURLConnection? = null
-                    var searchConn: HttpURLConnection? = null
-                    try {
-                        val tokenUrl = URL("https://accounts.spotify.com/api/token")
-                        tokenConn = (tokenUrl.openConnection() as HttpURLConnection).apply {
-                            requestMethod = "POST"
-                            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                            val credentials = "$SPOTIFY_CLIENT_ID:$SPOTIFY_CLIENT_SECRET"
-                            val encodedAuth = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
-                            setRequestProperty("Authorization", "Basic $encodedAuth")
-                            connectTimeout = 5000
-                            readTimeout = 5000
-                            doOutput = true
-                        }
-                        OutputStreamWriter(tokenConn.outputStream).use { it.write("grant_type=client_credentials") }
-
-                        if (tokenConn.responseCode == 200) {
-                            val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
-                            val accessToken = JSONObject(tokenRes).getString("access_token")
-
-                            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
-                            searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
-                                requestMethod = "GET"
-                                setRequestProperty("Authorization", "Bearer $accessToken")
-                                connectTimeout = 5000
-                                readTimeout = 5000
-                            }
-
-                            if (searchConn.responseCode == 200) {
-                                val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
-                                val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
-                                if (items.length() > 0) {
-                                    val trackUri = items.getJSONObject(0).getString("uri")
-                                    withContext(Dispatchers.Main) {
-                                        try {
-                                            val bgIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trackUri)).apply {
-                                                setPackage("com.spotify.music")
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_FROM_BACKGROUND or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
-                                            }
-                                            startActivity(bgIntent)
-
-                                            handler.postDelayed({
-                                                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                            }, 300L)
-
-                                            Log.d("FloatingService", "Background track play triggered: $trackUri")
-                                        } catch (e: Exception) {
-                                            Log.e("FloatingService", "Background launch error: ${e.message}")
-                                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("FloatingService", "Spotify API error: ${e.message}")
-                        withContext(Dispatchers.Main) {
-                            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-                        }
-                    } finally {
-                        try { tokenConn?.disconnect() } catch (_: Exception) {}
-                        try { searchConn?.disconnect() } catch (_: Exception) {}
-                    }
-                }
-            } else {
-                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-            }
+            // Pure background playback via media key: completely avoids opening Spotify UI
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
         } else if (lower.contains("pause") || lower.contains("stop")) {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
         } else if (lower.contains("skip") || lower.contains("next")) {
@@ -730,8 +649,8 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 6000
-                readTimeout = 6000
+                connectTimeout = 3000 // Fast timeout so she never freezes
+                readTimeout = 3000
             }
 
             val lowerMsg = userMessage.lowercase()
@@ -754,18 +673,19 @@ class FloatingCompanionService : Service() {
             }
 
             OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-            if (conn.responseCode != 200) return "Tch. Fine."
+            if (conn.responseCode != 200) return "Tch. Whatever."
 
             val responseString = conn.inputStream.bufferedReader().use { it.readText() }
             var rawReply = JSONObject(responseString).getJSONArray("choices")
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
 
             if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.contains("rule:") || rawReply.length > 120) {
-                rawReply = "Fine, opening it."
+                rawReply = "Fine."
             }
             rawReply
         } catch (_: Exception) {
-            "Fine. Doing it."
+            // Instant local fallback if OpenRouter free tier hangs or lags
+            "Hurry up."
         }
     }
 
@@ -777,8 +697,8 @@ class FloatingCompanionService : Service() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer ${getApiKey()}")
                 doOutput = true
-                connectTimeout = 6000
-                readTimeout = 6000
+                connectTimeout = 3000
+                readTimeout = 3000
             }
 
             val jsonBody = JSONObject().apply {
@@ -796,7 +716,7 @@ class FloatingCompanionService : Service() {
                 .getJSONObject(0).getJSONObject("message").getString("content").trim()
             
             if (rawReply.startsWith("{") || rawReply.contains("We are given") || rawReply.length > 120) {
-                rawReply = "Still watching you code."
+                rawReply = "Still watching."
             }
             rawReply
         } catch (_: Exception) {
@@ -1241,14 +1161,14 @@ class FloatingCompanionService : Service() {
 
         scope.launch {
             try {
-                // 1. Fetch AI dialogue first so she drops her snarky line smoothly
+                // 1. Fast AI reply with a strict timeout so she never locks up
                 val reply = withContext(Dispatchers.IO) { requestReply(message) }
                 if (dismissed) return@launch
                 
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or spotify routing immediately after dialogue renders
+                // 2. Execute command immediately without launching the Spotify UI app
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
@@ -1265,7 +1185,7 @@ class FloatingCompanionService : Service() {
                     history.removeAt(history.lastIndex)
                 }
                 if (!dismissed) {
-                    showDialogue("DORMANT", null, "Glitch.")
+                    showDialogue("DORMANT", null, "Fine.")
                 }
             } finally {
                 busy = false
