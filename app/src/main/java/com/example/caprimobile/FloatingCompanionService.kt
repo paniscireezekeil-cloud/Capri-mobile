@@ -586,9 +586,7 @@ class FloatingCompanionService : Service() {
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
                                     val trackUri = items.getJSONObject(0).getString("uri")
-                                    withContext(Dispatchers.Main) {
-                                        playViaAppRemote(trackUri)
-                                    }
+                                    executePlaybackViaWebAPI(accessToken, trackUri)
                                 }
                             }
                         }
@@ -612,22 +610,42 @@ class FloatingCompanionService : Service() {
         }
     }
 
-    private fun playViaAppRemote(trackUri: String) {
-        try {
-            val intent = Intent("com.spotify.mobile.android.ui.action.PLAY").apply {
-                setPackage("com.spotify.music")
-                putExtra("spotify_uri", trackUri)
+    private suspend fun executePlaybackViaWebAPI(accessToken: String, trackUri: String) {
+        withContext(Dispatchers.IO) {
+            var playConn: HttpURLConnection? = null
+            try {
+                val playUrl = URL("https://api.spotify.com/v1/me/player/play")
+                playConn = (playUrl.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    setRequestProperty("Authorization", "Bearer $accessToken")
+                    setRequestProperty("Content-Type", "application/json")
+                    connectTimeout = 3000
+                    readTimeout = 3000
+                    doOutput = true
+                }
+
+                val payload = JSONObject().apply {
+                    put("uris", JSONArray().apply { put(trackUri) })
+                }
+
+                OutputStreamWriter(playConn.outputStream).use { it.write(payload.toString()) }
+
+                if (playConn.responseCode in 200..299) {
+                    Log.d("FloatingService", "Direct Web API play command succeeded for: $trackUri")
+                } else {
+                    // Fallback to background dispatch if active Connect session isn't linked
+                    withContext(Dispatchers.Main) {
+                        sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("FloatingService", "Web API playback error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                }
+            } finally {
+                try { playConn?.disconnect() } catch (_: Exception) {}
             }
-            sendBroadcast(intent)
-
-            handler.postDelayed({
-                sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-            }, 300L)
-
-            Log.d("FloatingService", "Successfully dispatched track URI to background daemon: $trackUri")
-        } catch (e: Exception) {
-            Log.e("FloatingService", "Playback error: ${e.message}")
-            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
         }
     }
 
@@ -1250,7 +1268,7 @@ class FloatingCompanionService : Service() {
                 history.add("assistant" to reply)
                 showDialogue("TALKING", "> you: $message", reply)
 
-                // 2. Execute app launch or background playback command routing
+                // 2. Execute app launch or Web API playback command routing
                 val lower = message.lowercase()
                 if (lower.contains("open") || lower.contains("launch")) {
                     val appTarget = lower.substringAfter("open").substringAfter("launch").trim()
