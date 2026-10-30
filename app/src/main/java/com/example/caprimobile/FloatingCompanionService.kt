@@ -593,7 +593,7 @@ class FloatingCompanionService : Service() {
                                     val artistName = trackObj.getJSONArray("artists").getJSONObject(0).getString("name")
 
                                     withContext(Dispatchers.Main) {
-                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName. Try not to ruin it.")
+                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName. There, I got it running for you.")
                                         playViaIntentRelay(trackUri)
                                     }
                                     return@launch
@@ -639,6 +639,22 @@ class FloatingCompanionService : Service() {
 
             startActivity(trampolineIntent)
             Log.d("FloatingService", "Successfully relayed track intent to Spotify: $trackUri")
+
+            // Capri automatically tucks Spotify away to background once she's done launching/loading the track for you
+            scope.launch(Dispatchers.IO) {
+                delay(1800L) // Gives Spotify 1.8 seconds to parse the track URI and begin playing
+                try {
+                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(homeIntent)
+                    Log.d("FloatingService", "Capri tucked Spotify away after handling the track.")
+                } catch (e: Exception) {
+                    Log.e("FloatingService", "Failed to tuck Spotify away: ${e.message}")
+                }
+            }
+
         } catch (e: Exception) {
             Log.e("FloatingService", "Intent track relay failed: ${e.message}")
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
