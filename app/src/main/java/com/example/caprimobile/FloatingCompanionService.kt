@@ -574,8 +574,9 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
+                            // Fetch top 5 results to pick the most mainstream/popular track
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=1")
+                            val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=5")
                             searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
                                 requestMethod = "GET"
                                 setRequestProperty("Authorization", "Bearer $accessToken")
@@ -587,13 +588,26 @@ class FloatingCompanionService : Service() {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
-                                    val trackObj = items.getJSONObject(0)
-                                    val trackUri = trackObj.getString("uri")
-                                    val trackName = trackObj.getString("name")
-                                    val artistName = trackObj.getJSONArray("artists").getJSONObject(0).getString("name")
+                                    // Iterate to find the track with the highest popularity score (mainstream filter)
+                                    var bestTrack: JSONObject? = null
+                                    var maxPopularity = -1
+
+                                    for (i in 0 until items.length()) {
+                                        val item = items.getJSONObject(i)
+                                        val popularity = item.optInt("popularity", 0)
+                                        if (popularity > maxPopularity) {
+                                            maxPopularity = popularity
+                                            bestTrack = item
+                                        }
+                                    }
+
+                                    val targetTrack = bestTrack ?: items.getJSONObject(0)
+                                    val trackUri = targetTrack.getString("uri")
+                                    val trackName = targetTrack.getString("name")
+                                    val artistName = targetTrack.getJSONArray("artists").getJSONObject(0).getString("name")
 
                                     withContext(Dispatchers.Main) {
-                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName. There, I got it running for you.")
+                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName. Got the mainstream version so you don't complain.")
                                         playViaIntentRelay(trackUri)
                                     }
                                     return@launch
@@ -608,7 +622,7 @@ class FloatingCompanionService : Service() {
                     }
                     
                     withContext(Dispatchers.Main) {
-                        showDialogue("TALKING", "> you: $userMessage", "Couldn't find that exact track, but I forced playback anyway.")
+                        showDialogue("TALKING", "> you: $userMessage", "Couldn't find that exact mainstream track, but I forced playback anyway.")
                         sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
                     }
                 }
@@ -640,9 +654,8 @@ class FloatingCompanionService : Service() {
             startActivity(trampolineIntent)
             Log.d("FloatingService", "Successfully relayed track intent to Spotify: $trackUri")
 
-            // Capri automatically tucks Spotify away to background once she's done launching/loading the track for you
             scope.launch(Dispatchers.IO) {
-                delay(1800L) // Gives Spotify 1.8 seconds to parse the track URI and begin playing
+                delay(1800L)
                 try {
                     val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                         addCategory(Intent.CATEGORY_HOME)
@@ -1278,7 +1291,7 @@ class FloatingCompanionService : Service() {
                     handleCommandRouting(message)
                 } else {
                     val reply = withContext(Dispatchers.IO) { requestReply(message) }
-                    if (dismissed) return@launch
+                    if (dismissed) return$launch
                     
                     history.add("assistant" to reply)
                     showDialogue("TALKING", "> you: $message", reply)
