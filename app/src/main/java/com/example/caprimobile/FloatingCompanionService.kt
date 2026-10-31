@@ -118,7 +118,7 @@ class FloatingCompanionService : Service() {
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
 
-    // ElevenLabs Voice Credentials
+    // ElevenLabs Voice Credentials (Fixed with multilingual v2 model and your specific voice ID)
     private val ELEVENLABS_API_KEY = "Sk_139425acef3af7227262f8a0bf802a1781dfd1ac648106b0"
     private val ELEVENLABS_VOICE_ID = "NS7yU4WmAouJsg84X3Mg"
 
@@ -567,9 +567,10 @@ class FloatingCompanionService : Service() {
                     readTimeout = 5000
                 }
 
+                // Using eleven_multilingual_v2 for broad compatibility with custom voice models
                 val jsonBody = JSONObject().apply {
                     put("text", text)
-                    put("model_id", "eleven_monolingual_v1")
+                    put("model_id", "eleven_multilingual_v2")
                     val voiceSettings = JSONObject().apply {
                         put("stability", 0.45)
                         put("similarity_boost", 0.85)
@@ -722,20 +723,7 @@ class FloatingCompanionService : Service() {
 
             startActivity(trampolineIntent)
             Log.d("FloatingService", "Successfully relayed track intent to Spotify: $trackUri")
-
-            scope.launch(Dispatchers.IO) {
-                delay(1800L)
-                try {
-                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                        addCategory(Intent.CATEGORY_HOME)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    startActivity(homeIntent)
-                    Log.d("FloatingService", "Capri tucked Spotify away after handling the track.")
-                } catch (e: Exception) {
-                    Log.e("FloatingService", "Failed to tuck Spotify away: ${e.message}")
-                }
-            }
+            // Spotify remains open on screen
 
         } catch (e: Exception) {
             Log.e("FloatingService", "Intent track relay failed: ${e.message}")
