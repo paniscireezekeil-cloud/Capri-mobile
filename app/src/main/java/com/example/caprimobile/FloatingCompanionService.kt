@@ -114,12 +114,13 @@ class FloatingCompanionService : Service() {
     private var isAlternateForm = false
     private var lastTapTime = 0L
 
-    // Credentials
+    // Spotify Credentials
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
 
+    // ElevenLabs Voice Credentials
     private val ELEVENLABS_API_KEY = "Sk_139425acef3af7227262f8a0bf802a1781dfd1ac648106b0"
-    private val ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM" // Replace with Capri's Voice ID if custom
+    private val ELEVENLABS_VOICE_ID = "NS7yU4WmAouJsg84X3Mg"
 
     private var mediaPlayer: MediaPlayer? = null
 
