@@ -16,7 +16,9 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -38,7 +40,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -111,8 +114,14 @@ class FloatingCompanionService : Service() {
     private var isAlternateForm = false
     private var lastTapTime = 0L
 
+    // Credentials
     private val SPOTIFY_CLIENT_ID = "51c61988c9464b689446166f26650f3b"
     private val SPOTIFY_CLIENT_SECRET = "335dffa044b442139236be74178f56fb"
+
+    private val ELEVENLABS_API_KEY = "Sk_139425acef3af7227262f8a0bf802a1781dfd1ac648106b0"
+    private val ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM" // Replace with Capri's Voice ID if custom
+
+    private var mediaPlayer: MediaPlayer? = null
 
     private val personality = """
         You are Capri, a close friend and digital companion to D. 
@@ -542,6 +551,67 @@ class FloatingCompanionService : Service() {
         }
     }
 
+    private fun speakWithCapriVoice(text: String) {
+        if (text.isEmpty() || ELEVENLABS_API_KEY.isEmpty()) return
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("https://api.elevenlabs.io/v1/text-to-speech/$ELEVENLABS_VOICE_ID/stream")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("xi-api-key", ELEVENLABS_API_KEY)
+                    doOutput = true
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+
+                val jsonBody = JSONObject().apply {
+                    put("text", text)
+                    put("model_id", "eleven_monolingual_v1")
+                    val voiceSettings = JSONObject().apply {
+                        put("stability", 0.45)
+                        put("similarity_boost", 0.85)
+                        put("style", 0.20)
+                    }
+                    put("voice_settings", voiceSettings)
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
+
+                if (conn.responseCode == 200) {
+                    val tempFile = File.createTempFile("capri_voice", ".mp3", cacheDir)
+                    tempFile.deleteOnExit()
+
+                    conn.inputStream.use { input ->
+                        FileOutputStream(tempFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        mediaPlayer?.release()
+                        mediaPlayer = MediaPlayer().apply {
+                            setAudioAttributes(
+                                AudioAttributes.Builder()
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .build()
+                            )
+                            setDataSource(tempFile.absolutePath)
+                            prepare()
+                            start()
+                        }
+                    }
+                } else {
+                    Log.e("FloatingService", "ElevenLabs API Error Code: ${conn.responseCode}")
+                }
+            } catch (e: Exception) {
+                Log.e("FloatingService", "ElevenLabs Speech Error: ${e.message}")
+            }
+        }
+    }
+
     private fun handleCommandRouting(userMessage: String) {
         val lower = userMessage.lowercase()
 
@@ -574,7 +644,6 @@ class FloatingCompanionService : Service() {
                             val tokenRes = tokenConn.inputStream.bufferedReader().use { it.readText() }
                             val accessToken = JSONObject(tokenRes).getString("access_token")
 
-                            // Fetch top 5 results to pick the most mainstream/popular track
                             val encodedQuery = URLEncoder.encode(query, "UTF-8")
                             val searchUrl = URL("https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=5")
                             searchConn = (searchUrl.openConnection() as HttpURLConnection).apply {
@@ -588,7 +657,6 @@ class FloatingCompanionService : Service() {
                                 val searchRes = searchConn.inputStream.bufferedReader().use { it.readText() }
                                 val items = JSONObject(searchRes).getJSONObject("tracks").getJSONArray("items")
                                 if (items.length() > 0) {
-                                    // Iterate to find the track with the highest popularity score (mainstream filter)
                                     var bestTrack: JSONObject? = null
                                     var maxPopularity = -1
 
@@ -607,7 +675,7 @@ class FloatingCompanionService : Service() {
                                     val artistName = targetTrack.getJSONArray("artists").getJSONObject(0).getString("name")
 
                                     withContext(Dispatchers.Main) {
-                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName. Got the mainstream version so you don't complain.")
+                                        showDialogue("TALKING", "> you: $userMessage", "Fine, queueing up $trackName by $artistName.")
                                         playViaIntentRelay(trackUri)
                                     }
                                     return@launch
@@ -1145,6 +1213,10 @@ class FloatingCompanionService : Service() {
             return
         }
 
+        if (state == "TALKING" && targetText.isNotEmpty()) {
+            speakWithCapriVoice(targetText)
+        }
+
         dialogueView.text = ""
         dialogueView.requestLayout()
         panel.requestLayout()
@@ -1291,7 +1363,7 @@ class FloatingCompanionService : Service() {
                     handleCommandRouting(message)
                 } else {
                     val reply = withContext(Dispatchers.IO) { requestReply(message) }
-                    if (dismissed) return$launch
+                    if (dismissed) return@launch
                     
                     history.add("assistant" to reply)
                     showDialogue("TALKING", "> you: $message", reply)
@@ -1347,6 +1419,11 @@ class FloatingCompanionService : Service() {
         singleTapRunnable?.let { handler.removeCallbacks(it) }
         stopStarburstAnimation()
         stopMouthAnimation()
+
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+
         scope.cancel()
 
         try { containerView?.let { wm.removeView(it) } } catch (_: Exception) {}
@@ -1410,6 +1487,11 @@ class FloatingCompanionService : Service() {
         singleTapRunnable?.let { handler.removeCallbacks(it) }
         stopStarburstAnimation()
         stopMouthAnimation()
+
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+
         scope.cancel()
 
         try { containerView?.let { wm.removeView(it) } } catch (_: Exception) {}
